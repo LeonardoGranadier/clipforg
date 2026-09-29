@@ -1,0 +1,14 @@
+{
+  "name": "Karaokê",
+  "kind": "karaoke",
+  "font": "Montserrat ExtraBold",
+  "size": 80,
+  "primary_color": "#FFFFFF",
+  "highlight_color": "#FFD400",
+  "outline_color": "#000000",
+  "outline": 6,
+  "shadow": 3,
+  "position": 0.25,
+  "uppercase": true,
+  "words_per_line": 3
+}

@@ -1,0 +1,13 @@
+{
+  "name": "Pop (uma palavra)",
+  "kind": "pop",
+  "font": "Montserrat ExtraBold",
+  "size": 120,
+  "primary_color": "#FFFFFF",
+  "outline_color": "#000000",
+  "outline": 8,
+  "shadow": 4,
+  "position": 0.28,
+  "uppercase": true,
+  "words_per_line": 1
+}
