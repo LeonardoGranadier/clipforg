@@ -36,6 +36,9 @@ class Settings:
     whisper_device: str = os.getenv("WHISPER_DEVICE", "cpu").strip().lower()
     language: str = os.getenv("LANGUAGE", "pt").strip().lower()
 
+    # rapido (libx264 veryfast, ~2,3x mais rápido) | qualidade (libx264 medium)
+    render_speed: str = os.getenv("RENDER_SPEED", "rapido").strip().lower()
+
     clip_min_seconds: int = _int("CLIP_MIN_SECONDS", 15)
     clip_max_seconds: int = _int("CLIP_MAX_SECONDS", 90)
 

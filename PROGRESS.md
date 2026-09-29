@@ -1,6 +1,6 @@
 # Progresso
 
-**Fase atual:** 6 (Acabamento) concluída. **Todas as fases (0 a 6) estão prontas**, aguardando a validação final.
+**Fase atual:** todas as fases (0 a 6) concluídas, mais duas melhorias pedidas depois: render rápido e seguir quem fala. Aguardando validação.
 
 ## Funciona
 - **Fase 0:** `python -m app.doctor` checa FFmpeg, libass, GPU, chave da API, fontes e o modelo de rosto.
@@ -18,21 +18,25 @@
   - aviso na tela se faltar FFmpeg, libass, fontes ou o modelo de rosto;
   - botão Encerrar;
   - README final.
-- **94 testes automatizados** (`python -m pytest -q`), sem chamar a API nem o Whisper.
+- **Melhorias pós-Fase 6:**
+  - **Render rápido** (padrão): libx264 `veryfast`, 2,3x mais rápido (30 s de corte: 44,8 s → 19,6 s), arquivo menor, SSIM 0,995. Opção "Qualidade máxima" (`medium`) na interface, na CLI (`--speed`) e no `.env` (`RENDER_SPEED`).
+  - **Seguir quem fala:** com várias pessoas, o modo `face` escolhe quem mexe a boca durante a fala (pela transcrição). A troca tem histerese, segura a pessoa durante falhas curtas do detector e faz corte seco na troca.
+- **101 testes automatizados** (`python -m pytest -q`), sem chamar a API nem o Whisper.
 
 ## Testes reais
 - Vídeo vertical de 1 min (fala gritada): transcrição, sugestão da IA, corte sem palavra cortada, legenda karaokê/pop sincronizada, saída 1080x1920.
 - Vídeo de 12 min 23 s (enviado pelo usuário pela interface): transcrito e 7 cortes sugeridos (de 28 s a 71 s, notas de 65 a 85), 0 palavras cortadas no meio. **Critério de aceite da Fase 1 cumprido.**
 - Face-follow com vídeos montados (pessoa deslizando ou parada): o recorte acompanha, e o rosto nunca chega perto da borda. Parado, o recorte se mexe em só 5% dos quadros.
+- Seguir quem fala, com um vídeo montado (duas pessoas lado a lado, fala troca de lado aos 10 s): 1 única troca, aos 10,9 s; 152/160 amostras na pessoa certa (as 8 erradas são o 0,9 s de confirmação) e nenhuma troca falsa.
 - Interface (Chrome): todas as ações do editor de cortes, correção de legendas, render com fila/cancelar/downloads, upload → transcrição → IA, estilos próprios, apagar vídeos gerados, excluir projeto, fila global, Encerrar, atalho do menu.
 
 ## Ainda não verificado
 - A prévia da legenda sobre o vídeo e o destaque da palavra atual no player: a janela de automação do Chrome estava oculta e não carregava vídeo.
-- Face-follow numa entrevista horizontal real.
+- Face-follow e "seguir quem fala" numa entrevista horizontal real, com duas câmeras ou duas pessoas no mesmo quadro.
 
 ## Problemas conhecidos
-- O render no processador é lento: ~2x a duração do corte em 1080x1920 (`libx264 -preset medium`).
+- Render no processador: no modo rápido, mais ou menos a duração do corte em 1080x1920.
 - Em fala gritada/rápida, o Whisper `small` erra palavras. Opções: `WHISPER_MODEL=medium` ou corrigir na aba Legendas.
 - A fila fica na memória: fechar o servidor no meio de um render faz o corte voltar para "pendente".
-- Face-follow com várias pessoas segue o maior rosto, não quem fala.
+- "Seguir quem fala" usa só o movimento da boca (sem identificar vozes): se quem escuta ri ou fala junto, o recorte pode trocar. Rostos de perfil ou muito pequenos (<~40 px na análise) são menos confiáveis.
 - Nos estilos não-pop, uma palavra única com mais de ~27 letras pode encostar nas bordas.

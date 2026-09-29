@@ -5,6 +5,8 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
+import logging
+
 from app.models import Clip, Transcript, VideoInfo
 from app.pipeline import captions
 from app.pipeline.cut import cut
@@ -12,6 +14,9 @@ from app.errors import ClipForgeError
 from app.pipeline import face
 from app.pipeline.reframe import RESOLUTIONS, VerticalMode, is_vertical, vertical_filter
 from app.projects import Project, slugify
+
+
+log = logging.getLogger(__name__)
 
 
 def caption_words(project: Project, transcript: Transcript):
@@ -28,6 +33,7 @@ def render_clip(
     style: str | None = None,
     vertical: VerticalMode | None = None,
     resolution: str = "1080p",
+    speed: str | None = None,
     on_progress: Callable[[float], None] | None = None,
     cancel: threading.Event | None = None,
 ) -> Path:
@@ -48,7 +54,7 @@ def render_clip(
     if vertical == "face":
         # 1ª parte do progresso (25%) é a análise dos rostos; o resto é o render.
         cmds = base.with_suffix(".face.txt")
-        face_args = follow_face(project, clip, info, cmds,
+        face_args = follow_face(project, clip, info, cmds, transcript,
                                 on_progress=(lambda f: on_progress(0.25 * f)) if on_progress else None,
                                 cancel=cancel)
         render_progress = (lambda f: on_progress(0.25 + 0.75 * f)) if on_progress else None
@@ -63,7 +69,7 @@ def render_clip(
                                      width=width, height=height)
     try:
         return cut(project.source, base.with_suffix(".mp4"), clip.start, clip.end,
-                   log_name=f"{project.id}-{clip.id}", vf=vf, ass_path=ass_path,
+                   log_name=f"{project.id}-{clip.id}", vf=vf, ass_path=ass_path, speed=speed,
                    on_progress=render_progress, cancel=cancel)
     finally:
         if face_args:
@@ -71,13 +77,19 @@ def render_clip(
 
 
 def follow_face(
-    project: Project, clip: Clip, info: VideoInfo, cmds: Path,
+    project: Project, clip: Clip, info: VideoInfo, cmds: Path, transcript: Transcript | None,
     on_progress: Callable[[float], None] | None = None,
     cancel: threading.Event | None = None,
 ) -> tuple[Path, int, int, int]:
-    """Analisa os rostos do corte e grava os comandos do recorte. Retorna (arquivo, w, h, x inicial)."""
-    raw = face.sample_faces(project.source, clip.start, clip.end, info, on_progress=on_progress, cancel=cancel)
-    path = face.smooth_path(raw)
+    """Analisa os rostos do corte e grava os comandos do recorte. Retorna (arquivo, w, h, x inicial).
+
+    A transcrição diz quando há fala; com várias pessoas, o recorte segue quem mexe a boca nesses momentos.
+    """
+    samples = face.analyze(project.source, clip.start, clip.end, info, on_progress=on_progress, cancel=cancel)
+    words = transcript.all_words() if transcript else None
+    path = face.follow_path(samples, words, clip.start)
+    log.info("Seguir o rosto (%s %s): %d pessoa(s), trocas de pessoa em %s s",
+             project.id, clip.id, path.people, path.switches)
     xs = face.crop_positions(path, info, clip.end - clip.start)
     cmds.write_text(face.sendcmd_script(xs), encoding="utf-8")
     cw, ch = face.crop_box(info)

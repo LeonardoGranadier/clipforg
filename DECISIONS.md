@@ -88,3 +88,16 @@
 - **Encerrar pela interface:** `POST /api/shutdown` (com `force=true` se houver tarefas, que são canceladas antes) envia SIGINT ao próprio processo. Assim o uvicorn encerra de forma limpa, e o atalho do menu sobe o servidor de novo quando necessário.
 - **Confirmações em dois cliques** em todo lugar (excluir projeto, apagar vídeos, apagar estilo, encerrar), sem `alert`/`confirm`. A lista de projetos não se redesenha enquanto há uma confirmação pendente.
 - **Não implementado (fica como sugestão):** trocar o `-preset` do libx264 para acelerar o render; diarização para seguir quem fala; fila persistente.
+
+## 2026-09-29: Melhorias pós-Fase 6 (pedidas pelo usuário)
+
+- **Render rápido como padrão (`RENDER_SPEED=rapido` → libx264 `veryfast`).** Medido num corte de 30 s em 1080x1920 blur: 19,6 s contra 44,8 s do `medium`, arquivo 9% menor, SSIM 0,995. `qualidade` mantém o `medium`. O `crf 20` continua igual nos dois.
+- **"Seguir quem fala" sem pyannote.** A diarização diz *quando* cada voz fala, mas não *qual rosto* é de quem; para isso é preciso a imagem de qualquer jeito. Por isso usei a imagem: o YuNet já dá o nariz e os cantos da boca, e com eles o recorte da boca é alinhado ao rosto (compensa o movimento da cabeça) e normalizado. A atividade é a diferença média entre amostras seguidas da mesma pessoa (trilha). Isso não precisou de nova dependência (pyannote traria PyTorch, ~2 GB, e exige conta no Hugging Face).
+- **Escolha de quem fala:**
+  - só conta movimento de boca **durante a fala** (pelas palavras da transcrição, com ±0,15 s);
+  - média móvel de 0,75 s;
+  - troca só se a outra pessoa tiver 1,5x mais atividade por 0,5 s seguidos;
+  - se o rosto de quem fala some por menos de 1 s (falha do detector), segura a pessoa;
+  - a pessoa inicial é a que mais fala no primeiro 1,5 s (e não o maior rosto).
+- **Análise a 8 amostras/s** (antes 4), porque a boca muda rápido. As constantes de suavização passaram a ser definidas em segundos, para não depender da taxa.
+- **Na troca de pessoa, o recorte faz corte seco** (sem interpolar), como numa edição, em vez de deslizar pela tela.

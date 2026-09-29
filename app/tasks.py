@@ -72,7 +72,8 @@ def suggest_task(project: Project):
     return run
 
 
-def render_task(project: Project, clip_id: str, style: str | None, vertical: str | None, resolution: str):
+def render_task(project: Project, clip_id: str, style: str | None, vertical: str | None, resolution: str,
+                speed: str | None = None):
     def run(job: Job) -> None:
         clip = next((c for c in project.load_clips() if c.id == clip_id), None)
         if clip is None:
@@ -86,7 +87,7 @@ def render_task(project: Project, clip_id: str, style: str | None, vertical: str
         job.set("Renderizando", 0)
         try:
             out = render_clip(project, clip, transcript, info, style=style, vertical=applied,
-                              resolution=resolution, on_progress=lambda f: job.set(progress=f),
+                              resolution=resolution, speed=speed, on_progress=lambda f: job.set(progress=f),
                               cancel=job.cancel_event)
         except ClipForgeError:
             db.update_clip(project.id, clip_id, status="error" if not job.cancel_event.is_set() else "pending")

@@ -117,7 +117,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--captions-only", action="store_true",
                    help="só gerar .srt/.ass do vídeo inteiro, sem cortar e sem IA")
     p.add_argument("--vertical", choices=MODES, default=None,
-                   help="saída vertical 1080x1920: fit (barras), center (recorte central) ou blur (fundo desfocado)")
+                   help="saída vertical 1080x1920: fit (barras), center (recorte central), blur (fundo desfocado) "
+                        "ou face (segue o rosto de quem fala)")
+    p.add_argument("--speed", choices=["rapido", "qualidade"], default=None,
+                   help="velocidade do render (padrão: RENDER_SPEED do .env, 'rapido')")
     p.add_argument("--style", default="classic", choices=list_presets(), help="estilo da legenda (padrão: classic)")
     args = p.parse_args(argv)
 
@@ -206,7 +209,7 @@ def run(args: argparse.Namespace) -> int:
         c.status = "rendering"
         try:
             dst = render_clip(project, c, transcript, info, style=style, vertical=vertical,
-                              on_progress=Bar(c.id))
+                              speed=args.speed, on_progress=Bar(c.id))
             c.status, c.output_path, c.style, c.vertical_mode = "done", str(dst), style, vertical
         except ClipForgeError as e:
             print(f"\n     {c.id}: {e}")

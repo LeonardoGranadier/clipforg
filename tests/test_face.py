@@ -2,8 +2,9 @@ import statistics
 
 import pytest
 
-from app.models import VideoInfo
+from app.models import VideoInfo, Word
 from app.pipeline import face
+from app.pipeline.face import Face
 from app.pipeline.cut import cut
 from app.pipeline.probe import probe
 from app.pipeline.reframe import vertical_filter
@@ -77,9 +78,11 @@ def test_sendcmd_script_only_on_change():
 def test_face_render_without_faces_is_centered(sample_video, tmp_path):
     """Integração: vídeo sem rosto -> recorte central, saída 1080x1920."""
     info = probe(sample_video)
-    raw = face.sample_faces(sample_video, 1, 4, info)
-    assert raw and all(r is None for r in raw)
-    xs = face.crop_positions(face.smooth_path(raw), info, 3)
+    samples = face.analyze(sample_video, 1, 4, info)
+    assert samples and all(not s for s in samples)
+    path = face.follow_path(samples, None, 1)
+    assert path.people == 0
+    xs = face.crop_positions(path, info, 3)
     cw, ch = face.crop_box(info)
     assert set(xs) == {round(0.5 * info.width - cw / 2)}
     cmds = tmp_path / "face.txt"
@@ -88,3 +91,76 @@ def test_face_render_without_faces_is_centered(sample_video, tmp_path):
               vf=vertical_filter("face", info, face=(cmds, cw, ch, xs[0])))
     o = probe(out)
     assert (o.width, o.height) == (1080, 1920)
+
+
+# --- quem está falando ---------------------------------------------------------
+
+FPS = face.SAMPLE_FPS
+
+
+def two_people(n, talker, act_talk=0.6, act_quiet=0.03):
+    """n amostras com duas pessoas (id 0 à esquerda, id 1 à direita); `talker(i)` diz quem fala."""
+    out = []
+    for i in range(n):
+        t = talker(i)
+        out.append({0: Face(cx=0.25, w=0.1, activity=act_talk if t == 0 else act_quiet),
+                    1: Face(cx=0.75, w=0.12, activity=act_talk if t == 1 else act_quiet)})
+    return out
+
+
+def test_starts_on_who_is_talking_not_the_biggest_face():
+    samples = two_people(4 * FPS, talker=lambda i: 0)  # o 0 fala, mas o rosto 1 é maior
+    targets, switches = face.choose_targets(samples, [True] * len(samples))
+    assert all(t == 0.25 for t in targets) and switches == []
+
+
+def test_switches_to_the_new_speaker_within_a_second():
+    n = 8 * FPS
+    samples = two_people(n, talker=lambda i: 0 if i < n // 2 else 1)
+    targets, switches = face.choose_targets(samples, [True] * n)
+    assert len(switches) == 1
+    lag = (switches[0] - n // 2) / FPS
+    assert 0 < lag <= 1.2
+    assert targets[-1] == 0.75
+
+
+def test_brief_reaction_does_not_switch():
+    # o ouvinte mexe a boca por 0,25 s (risada curta): não deve trocar
+    n = 6 * FPS
+    samples = two_people(n, talker=lambda i: 1 if 3 * FPS <= i < 3 * FPS + FPS // 4 else 0)
+    targets, switches = face.choose_targets(samples, [True] * n)
+    assert switches == [] and all(t == 0.25 for t in targets)
+
+
+def test_no_switch_during_silence():
+    # sem fala na transcrição, movimento de boca não conta (mastigar, sorrir...)
+    n = 6 * FPS
+    samples = two_people(n, talker=lambda i: 0 if i < FPS * 2 else 1)
+    speech = [i < FPS * 2 for i in range(n)]
+    targets, switches = face.choose_targets(samples, speech)
+    assert switches == []
+
+
+def test_holds_speaker_through_detection_dropout():
+    n = 4 * FPS
+    samples = two_people(n, talker=lambda i: 0)
+    for i in range(FPS, FPS + FPS // 2):   # o rosto de quem fala some por 0,5 s
+        del samples[i][0]
+    targets, switches = face.choose_targets(samples, [True] * n)
+    assert switches == []
+    assert 0.75 not in targets   # nunca foi para o ouvinte
+
+
+def test_speech_mask_from_words():
+    words = [Word(word="oi", start=10.0, end=10.5), Word(word="tudo", start=12.0, end=12.4)]
+    mask = face.speech_mask(words, start=10.0, n=3 * FPS)
+    t = [i / FPS for i in range(3 * FPS)]
+    assert all(m for m, x in zip(mask, t) if x <= 0.5)
+    assert not any(m for m, x in zip(mask, t) if 0.8 <= x <= 1.8)
+    assert face.speech_mask(None, 0, 5) == [True] * 5
+
+
+def test_crop_cuts_instead_of_panning_on_speaker_switch():
+    path = face.FacePath(centers=[0.25] * FPS + [0.75] * FPS, detected=2 * FPS)
+    xs = face.crop_positions(path, INFO, 2.0)
+    assert len(set(xs)) == 2  # só duas posições: corte seco, sem quadros intermediários

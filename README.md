@@ -82,8 +82,8 @@ Abra **ClipForge** pelo menu de aplicativos, ou rode `python -m app` com o ambie
    - Para corrigir uma palavra, clique nela e digite. Enter salva, Esc cancela, e texto vazio remove a palavra.
    - Em **Criar um estilo a partir do selecionado** você ajusta fonte, cores, tamanho, posição etc. e salva como um estilo novo. Os estilos de fábrica nunca são alterados.
 4. **Exportar:**
-   - Escolha o formato: original; vertical **fit** (barras), **center** (recorte central), **blur** (fundo desfocado) ou **seguir o rosto**.
-   - Escolha a legenda e a resolução (1080x1920 ou 720x1280).
+   - Escolha o formato: original; vertical **fit** (barras), **center** (recorte central), **blur** (fundo desfocado) ou **seguir quem fala**. Esse último acompanha o rosto e, com várias pessoas, corta para quem está falando (pelo movimento da boca durante a fala).
+   - Escolha a legenda, a resolução (1080x1920 ou 720x1280) e a velocidade (**Rápido**, o padrão, ou **Qualidade máxima**, cerca de 2x mais lento e com diferença quase invisível).
    - Renderize um corte ou todos e baixe **MP4**, **SRT** e **ASS**.
    - **Só legendas** gera `.srt` e `.ass` do vídeo inteiro, sem cortar.
 
@@ -111,7 +111,8 @@ python cli.py caminho/do/video.mp4 --vertical blur --captions --style karaoke
 | `--no-render` | Só transcreve e sugere, sem gerar os vídeos. |
 | `--lang en` | Idioma do vídeo (`pt`, `en` ou `auto`). |
 | `--whisper-model medium` | Troca o modelo de transcrição. |
-| `--vertical blur` | Saída 9:16: `fit`, `center`, `blur` ou `face` (segue o rosto). |
+| `--vertical blur` | Saída 9:16: `fit`, `center`, `blur` ou `face` (segue o rosto de quem fala). |
+| `--speed qualidade` | Velocidade do render: `rapido` (padrão) ou `qualidade`. |
 | `--captions` | Grava a legenda nos cortes e salva `.ass` e `.srt` ao lado de cada `.mp4`. |
 | `--style karaoke` | Estilo da legenda: `classic`, `karaoke`, `pop`, `boxed` ou um estilo seu. |
 | `--captions-only` | Só gera `.srt` e `.ass` do vídeo inteiro, em `exports/`. |
@@ -129,6 +130,7 @@ A CLI e a interface usam os mesmos projetos. Uma transcrição feita por uma é 
 | `WHISPER_MODEL` | `small` | `base` (rápido), `small`, `medium` (mais preciso, mais lento), `large-v3` (com GPU). |
 | `WHISPER_DEVICE` | `cpu` | `cpu`, `cuda` ou `auto`. |
 | `LANGUAGE` | `pt` | `pt`, `en` ou `auto`. |
+| `RENDER_SPEED` | `rapido` | `rapido` (~2,3x mais rápido) ou `qualidade`. |
 | `CLIP_MIN_SECONDS` / `CLIP_MAX_SECONDS` | `15` / `90` | Faixa de duração dos cortes sugeridos. |
 
 ## Onde ficam os arquivos
@@ -156,7 +158,8 @@ data/
 | Transcrição com palavras erradas | Corrija na aba Legendas, ou use `WHISPER_MODEL=medium` no `.env` e transcreva de novo (apague `transcript.json` do projeto). |
 | "O vídeo não tem áudio" | O ClipForge precisa da fala para transcrever. |
 | "Disco cheio" | Use **Apagar vídeos gerados** ou exclua projetos antigos. |
-| Render lento | É normal no processador: cerca de 2 vezes a duração do corte. A resolução 720x1280 é mais rápida. |
+| Render lento | No modo Rápido, um corte leva mais ou menos a própria duração para renderizar no processador. A resolução 720x1280 é ainda mais rápida. |
+| "Seguir quem fala" fica na pessoa errada | Funciona melhor com rostos de frente e bem iluminados. Se a pessoa que escuta ri ou fala junto, o recorte pode trocar. Nesse caso use **center** ou divida o corte. |
 | A página não abre | O servidor pode ter sido encerrado. Abra pelo atalho de novo. |
 | Outro erro | Veja `data/logs/clipforge.log`. Ele nunca contém a sua chave da API. |
 

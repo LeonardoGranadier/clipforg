@@ -894,7 +894,8 @@ function projectView(pid) {
 
   function exportOptions() {
     const vertical = $("#opt-vertical").value || null;
-    return { vertical, style: $("#opt-style").value || null, resolution: $("#opt-resolution").value };
+    return { vertical, style: $("#opt-style").value || null, resolution: $("#opt-resolution").value,
+             speed: $("#opt-speed").value };
   }
 
   function renderExport() {
@@ -1066,7 +1067,7 @@ function projectView(pid) {
     video.currentTime = ((e.clientX - r.left) / r.width) * (P.project?.info.duration || 0);
   });
 
-  ["opt-vertical", "opt-style", "opt-resolution"].forEach((id) =>
+  ["opt-vertical", "opt-style", "opt-resolution", "opt-speed"].forEach((id) =>
     $("#" + id).addEventListener("change", (e) => store.set("export." + id.slice(4), e.target.value)));
 
   // ---------- laço de animação (playhead, palavra atual, prévia) ----------
@@ -1109,6 +1110,7 @@ function projectView(pid) {
       $(`[data-tab="${tab}"]`)?.click();
       $("#opt-vertical").value = store.get("export.vertical", "blur");
       $("#opt-resolution").value = store.get("export.resolution", "1080p");
+      $("#opt-speed").value = store.get("export.speed", S.status?.render_speed || "rapido");
       syncStyleSelect();
       renderStylePicker();
       fillStyleForm();

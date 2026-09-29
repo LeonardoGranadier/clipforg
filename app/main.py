@@ -30,6 +30,7 @@ from app.jobs import jobs
 from app.models import Clip, VideoInfo
 from app.pipeline import captions
 from app.pipeline.probe import probe
+from app.pipeline.cut import SPEEDS
 from app.pipeline.reframe import MODES, RESOLUTIONS
 from app.pipeline.render import caption_words, export_full_captions
 from app.pipeline.snap import snap_range
@@ -164,6 +165,7 @@ def status() -> dict:
         "whisper_model": settings.whisper_model,
         "vertical_modes": list(MODES),
         "resolutions": list(RESOLUTIONS),
+        "render_speed": settings.render_speed,
         "clip_min_seconds": settings.clip_min_seconds,
         "clip_max_seconds": settings.clip_max_seconds,
         "fonts": list(captions.FONTS),
@@ -423,6 +425,7 @@ class RenderOptions(BaseModel):
     style: str | None = None
     vertical: str | None = None
     resolution: str = "1080p"
+    speed: str | None = None
 
 
 def _check_render(opts: RenderOptions) -> None:
@@ -432,6 +435,8 @@ def _check_render(opts: RenderOptions) -> None:
         raise ClipForgeError(f"Modo vertical '{opts.vertical}' não existe.")
     if opts.resolution not in RESOLUTIONS:
         raise ClipForgeError(f"Resolução '{opts.resolution}' não existe.")
+    if opts.speed and opts.speed not in SPEEDS:
+        raise ClipForgeError(f"Velocidade '{opts.speed}' não existe. Use: {', '.join(SPEEDS)}.")
 
 
 def _submit_render(project: Project, cid: str, opts: RenderOptions) -> dict:
@@ -439,7 +444,7 @@ def _submit_render(project: Project, cid: str, opts: RenderOptions) -> dict:
     if running:
         return running.public()
     return jobs.submit("render", project.id, tasks.render_task(project, cid, opts.style, opts.vertical,
-                                                              opts.resolution), clip_id=cid).public()
+                                                              opts.resolution, opts.speed), clip_id=cid).public()
 
 
 @app.post("/api/projects/{pid}/clips/{cid}/render")
