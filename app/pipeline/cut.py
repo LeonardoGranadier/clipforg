@@ -30,17 +30,22 @@ def cut(
     end: float,
     *,
     log_name: str,
+    vf: str | None = None,
     ass_path: Path | None = None,
     on_progress: Callable[[float], None] | None = None,
 ) -> Path:
-    """Corta [start, end]. Com `ass_path`, grava a legenda no vídeo (tempos relativos ao corte)."""
+    """Corta [start, end].
+
+    `vf`: filtro de vídeo aplicado antes da legenda (ex.: reenquadramento vertical).
+    `ass_path`: grava a legenda no vídeo (tempos relativos ao início do corte).
+    """
     if end <= start:
         raise ClipForgeError(f"Corte inválido: fim ({end:.2f}s) antes do início ({start:.2f}s).")
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_name(dst.stem + ".part" + dst.suffix)
-    vf = ass_filter(ass_path) if ass_path else None
+    filters = ",".join(f for f in (vf, ass_filter(ass_path) if ass_path else None) if f) or None
     try:
-        run_ffmpeg(cut_args(src, tmp, start, end, vf), log_path=settings.logs_dir / f"{log_name}.log",
+        run_ffmpeg(cut_args(src, tmp, start, end, filters), log_path=settings.logs_dir / f"{log_name}.log",
                    duration=end - start, on_progress=on_progress)
         tmp.replace(dst)
     finally:

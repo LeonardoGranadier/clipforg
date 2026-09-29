@@ -5,6 +5,7 @@ Exemplos:
     python cli.py meu_video.mp4 --clip 1:05-1:48 --clip 300-345.5   # cortes manuais
     python cli.py meu_video.mp4 --resuggest                          # pede novas sugestões à IA
     python cli.py meu_video.mp4 --captions --style karaoke           # cortes com legenda gravada
+    python cli.py meu_video.mp4 --vertical blur --captions            # 9:16 com fundo desfocado
     python cli.py meu_video.mp4 --captions-only                      # só .srt/.ass do vídeo inteiro
 """
 from __future__ import annotations
@@ -20,6 +21,7 @@ from app.errors import ClipForgeError
 from app.models import Clip, Transcript
 from app.pipeline.captions import list_presets
 from app.pipeline.probe import probe
+from app.pipeline.reframe import MODES, is_vertical
 from app.pipeline.render import export_full_captions, render_clip
 from app.pipeline.snap import snap_range
 from app.pipeline.suggest import fmt_time, suggest_clips
@@ -114,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--captions", action="store_true", help="gravar a legenda nos cortes (e salvar .ass/.srt)")
     p.add_argument("--captions-only", action="store_true",
                    help="só gerar .srt/.ass do vídeo inteiro, sem cortar e sem IA")
+    p.add_argument("--vertical", choices=MODES, default=None,
+                   help="saída vertical 1080x1920: fit (barras), center (recorte central) ou blur (fundo desfocado)")
     p.add_argument("--style", default="classic", choices=list_presets(), help="estilo da legenda (padrão: classic)")
     args = p.parse_args(argv)
 
@@ -187,7 +191,11 @@ def run(args: argparse.Namespace) -> int:
         return 0
 
     style = args.style if args.captions else None
-    todo = [c for c in clips if not (c.status == "done" and c.style == style
+    vertical = args.vertical
+    if vertical and is_vertical(info) and vertical != "fit":
+        print(f"     O vídeo já é vertical: o modo '{vertical}' não se aplica, usando 'fit'.")
+        vertical = "fit"
+    todo = [c for c in clips if not (c.status == "done" and c.style == style and c.vertical_mode == vertical
                                      and c.output_path and Path(c.output_path).exists())]
     if not todo:
         print(f"4/4  Todos os cortes já foram gerados: {project.clips_dir}")
@@ -197,8 +205,9 @@ def run(args: argparse.Namespace) -> int:
     for c in todo:
         c.status = "rendering"
         try:
-            dst = render_clip(project, c, transcript, info, style=style, on_progress=Bar(c.id))
-            c.status, c.output_path, c.style = "done", str(dst), style
+            dst = render_clip(project, c, transcript, info, style=style, vertical=vertical,
+                              on_progress=Bar(c.id))
+            c.status, c.output_path, c.style, c.vertical_mode = "done", str(dst), style, vertical
         except ClipForgeError as e:
             print(f"\n     {c.id}: {e}")
             c.status = "error"

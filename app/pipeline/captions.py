@@ -179,6 +179,17 @@ def _display(w: Word, preset: CaptionPreset) -> str:
     return ass_escape(w.word.upper() if preset.uppercase else w.word)
 
 
+POP_MAX_CHARS = 16  # acima disso a palavra do estilo pop é reduzida para caber na largura
+
+
+def pop_tags(n_chars: int) -> str:
+    """Animação de escala do pop (80% → 112% → 100%), reduzida em palavras longas."""
+    base = 100 * min(1.0, POP_MAX_CHARS / max(1, n_chars))
+    f = lambda k: round(base * k)  # noqa: E731
+    return (f"{{\\fscx{f(0.8)}\\fscy{f(0.8)}\\t(0,90,\\fscx{f(1.12)}\\fscy{f(1.12)})"
+            f"\\t(90,160,\\fscx{f(1)}\\fscy{f(1)})}}")
+
+
 def build_ass(cues: list[Cue], preset: CaptionPreset, width: int = REF_W, height: int = REF_H) -> str:
     # Escala pelo lado menor: 1080 no vertical 1080x1920 (escala 1) e também no 1920x1080.
     scale = min(width, height) / REF_W
@@ -241,8 +252,7 @@ def build_ass(cues: list[Cue], preset: CaptionPreset, width: int = REF_W, height
             for i, w in enumerate(cue.words):
                 s = cue.start if i == 0 else w.start
                 e = cue.words[i + 1].start if i + 1 < len(cue.words) else cue.end
-                anim = "{\\fscx80\\fscy80\\t(0,90,\\fscx112\\fscy112)\\t(90,160,\\fscx100\\fscy100)}"
-                add(s, e, anim + shown[i])
+                add(s, e, pop_tags(len(w.word)) + shown[i])
         else:  # classic, boxed
             add(cue.start, cue.end, "\\N".join(wrap(shown, preset.max_chars)))
 

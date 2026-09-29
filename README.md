@@ -73,6 +73,7 @@ Na segunda vez com o mesmo vídeo, a transcrição e as sugestões salvas são r
 | `--no-render` | Só transcreve e sugere, sem gerar os vídeos. |
 | `--lang en` | Idioma do vídeo (`pt`, `en` ou `auto`). |
 | `--whisper-model medium` | Troca o modelo de transcrição. |
+| `--vertical blur` | Saída vertical 1080x1920: `fit` (barras pretas), `center` (recorte central) ou `blur` (fundo desfocado). Vídeos que já são verticais sempre usam `fit`. |
 | `--captions` | Grava a legenda nos cortes e salva `.ass` e `.srt` ao lado de cada `.mp4`. |
 | `--style karaoke` | Estilo da legenda: `classic`, `karaoke`, `pop` ou `boxed` (padrão: `classic`). |
 | `--captions-only` | Só gera `.srt` e `.ass` do vídeo inteiro, em `exports/`, sem cortar e sem IA. |

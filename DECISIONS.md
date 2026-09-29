@@ -36,3 +36,13 @@
 - **`.srt` em 2 linhas de até 42 caracteres**, quebrando no fim das frases ou em pausas maiores que 0,7 s.
 - **Cache do render:** um corte só é gerado de novo se o estilo mudar (`Clip.style`, onde `null` = sem legenda).
 - **`captions_edited.json` = `{"índice_da_palavra": "texto"}`**, com índice na lista de todas as palavras da transcrição. Texto vazio remove a palavra da legenda.
+
+## 2026-09-29: Fase 3
+
+- **fit:** `scale=1080:1920:force_original_aspect_ratio=decrease` + `pad`, em vez de `scale=1080:-2`. Assim também funciona com vídeos mais "altos" que 9:16, que passariam de 1920 de altura.
+- **center:** o recorte usa `min(iw, ih*9/16)` para não falhar em vídeos mais estreitos que 9:16.
+- **blur:** o fundo é desfocado em 1/4 da resolução (270x480) e depois ampliado, o que é bem mais rápido que desfocar em 1080x1920. Ele também fica 8% mais escuro para destacar o vídeo da frente.
+- **Vídeo já vertical (altura > largura):** sempre `fit`, sem recortar. A CLI avisa se outro modo foi pedido.
+- **Saída sempre com `fps=30,setsar=1`**, e o reenquadramento vem antes da legenda no mesmo filtro. O `.ass` usa `PlayRes` 1080x1920.
+- **Pop:** palavras com mais de 16 letras são reduzidas proporcionalmente para caber na largura.
+- **Cache do render:** um corte é gerado de novo se o estilo **ou** o modo vertical mudar.
