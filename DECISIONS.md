@@ -59,3 +59,17 @@
 - **Vídeo vertical:** o corte registra o modo realmente aplicado (`fit`), e não o pedido.
 - **Sem terminal:** `scripts/install-launcher.sh` cria um atalho no menu de aplicativos, que chama `scripts/start.sh` (abre o navegador e sobe o servidor se ele ainda não estiver rodando).
 - **Pasta de dados configurável** (`CLIPFORGE_DATA`), para os testes nunca tocarem em `data/`.
+
+## 2026-09-29: Fase 5
+
+- **Detector YuNet (OpenCV `FaceDetectorYN`)**, com o modelo de 230 KB em `models/` (licença MIT, do opencv_zoo), em vez do MediaPipe. O OpenCV já estava instalado e não precisou de nova dependência. O YuNet é rápido e robusto a ângulos.
+- **Amostragem pelo FFmpeg** (`fps=4,scale=640`, BGR bruto por pipe para o numpy). Isso respeita a rotação do vídeo e é rápido: ~2,6 s para 20 s de vídeo.
+- **Aplicação com `sendcmd` + `crop@face`** (o comando muda o `x` do crop), escolhida como a forma mais simples que funciona. Uma expressão gigante no `crop` ficaria ilegível, e mandar os quadros pelo OpenCV por pipe seria mais lento e mais complexo. As posições são interpoladas para 30 comandos por segundo, e só entra no arquivo o que muda.
+- **Suavização:**
+  - zona morta de 5% com histerese: o recorte começa a andar quando o rosto sai da zona e só para quando ele recentraliza;
+  - só começa a andar se o rosto ficar fora por 2 amostras seguidas, para um falso positivo isolado não mover nada;
+  - velocidade máxima de 35% da largura por segundo;
+  - salto instantâneo se o rosto mudar mais de 25% e ficar lá (troca de câmera);
+  - sem rosto: mantém a posição por 1 s e depois volta ao centro devagar.
+- **Vários rostos:** segue o maior. Diarização (pyannote) só se o usuário pedir.
+- **Progresso do render no modo face:** 25% para a análise e 75% para o render.

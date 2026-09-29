@@ -9,6 +9,8 @@ from app.pipeline.cut import cut
 from app.pipeline.probe import probe
 from app.pipeline.reframe import MODES, is_vertical, vertical_filter
 
+SIMPLE_MODES = [m for m in MODES if m != "face"]  # face precisa da análise (ver test_face.py)
+
 H169 = VideoInfo(duration=10, width=1920, height=1080, fps=30, has_audio=True)
 V916 = VideoInfo(duration=10, width=576, height=1024, fps=30, has_audio=True)
 
@@ -18,7 +20,7 @@ def test_is_vertical():
     assert is_vertical(V916)
 
 
-@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("mode", SIMPLE_MODES)
 def test_filters_end_in_1080x1920_30fps(mode):
     vf = vertical_filter(mode, H169)
     assert vf.endswith(",fps=30,setsar=1")
@@ -57,7 +59,7 @@ def portrait_video(tmp_path_factory):
     return out
 
 
-@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("mode", SIMPLE_MODES)
 def test_render_vertical_horizontal_source(sample_video, tmp_path, mode):
     info = probe(sample_video)
     words = [Word(word=w, start=1 + i * 0.4, end=1.35 + i * 0.4) for i, w in enumerate("Olá ação coração".split())]

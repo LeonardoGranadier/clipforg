@@ -1,12 +1,14 @@
-"""Reenquadramento vertical 9:16 (1080x1920): fit, center e blur."""
+"""Reenquadramento vertical 9:16 (1080x1920): fit, center, blur e face (segue o rosto)."""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from app.models import VideoInfo
+from app.pipeline.ffmpeg import filter_path
 
-VerticalMode = Literal["fit", "center", "blur"]
-MODES: tuple[str, ...] = ("fit", "center", "blur")
+VerticalMode = Literal["fit", "center", "blur", "face"]
+MODES: tuple[str, ...] = ("fit", "center", "blur", "face")
 OUT_W, OUT_H, OUT_FPS = 1080, 1920, 30
 RESOLUTIONS: dict[str, tuple[int, int]] = {"1080p": (1080, 1920), "720p": (720, 1280)}
 
@@ -15,10 +17,16 @@ def is_vertical(info: VideoInfo) -> bool:
     return info.height > info.width
 
 
-def vertical_filter(mode: VerticalMode, info: VideoInfo, size: tuple[int, int] = (OUT_W, OUT_H)) -> str:
+def vertical_filter(
+    mode: VerticalMode,
+    info: VideoInfo,
+    size: tuple[int, int] = (OUT_W, OUT_H),
+    face: tuple[Path, int, int, int] | None = None,
+) -> str:
     """Filtro FFmpeg (-vf) que transforma o vídeo em 9:16 (padrão 1080x1920) a 30 fps.
 
     Vídeos que já são verticais não são reenquadrados: só se ajustam à tela (fit).
+    `face` (modo face): (arquivo do sendcmd, largura e altura do recorte, x inicial).
     """
     if is_vertical(info):
         mode = "fit"
@@ -31,6 +39,14 @@ def vertical_filter(mode: VerticalMode, info: VideoInfo, size: tuple[int, int] =
         # Recorte central 9:16. min() evita erro se o vídeo for mais estreito que 9:16.
         chain = (r"crop=w='min(iw\,ih*9/16)':h='min(ih\,iw*16/9)',"
                  f"scale={W}:{H}")
+    elif mode == "face":
+        if face is None:
+            raise ValueError("modo face precisa do caminho calculado (face=...)")
+        cmds, cw, ch, x0 = face
+        y = (info.height - ch) // 2
+        # sendcmd muda o x do crop ao longo do tempo (tempos relativos ao início do corte)
+        chain = (f"sendcmd=f={filter_path(cmds)},"
+                 f"crop@face=w={cw}:h={ch}:x={x0}:y={y},scale={W}:{H}")
     elif mode == "blur":
         # Fundo: o próprio vídeo preenchendo a tela, desfocado (em resolução baixa, que é mais rápido).
         # Frente: o vídeo inteiro na largura 1080, no centro.
