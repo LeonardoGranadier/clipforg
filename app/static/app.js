@@ -54,6 +54,27 @@ function toast(msg, kind = "", action = null) {
 }
 const fail = (e) => toast(e.message || String(e), "error");
 
+// Confirmação em dois cliques (sem janelas de diálogo): o 1º clique muda o texto do botão.
+function confirmClick(btn, question, fn) {
+  if (btn.dataset.armed) {
+    delete btn.dataset.armed;
+    btn.textContent = btn.dataset.label;
+    fn();
+    return;
+  }
+  btn.dataset.label = btn.textContent;
+  btn.dataset.armed = "1";
+  btn.textContent = question;
+  setTimeout(() => {
+    if (btn.dataset.armed) { delete btn.dataset.armed; btn.textContent = btn.dataset.label; }
+  }, 4000);
+}
+
+function fmtBytes(n) {
+  if (!n) return "0 MB";
+  return n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${(n / 1e6).toFixed(n >= 1e8 ? 0 : 1)} MB`;
+}
+
 const store = {
   get(k, d) { try { return JSON.parse(localStorage.getItem("cf." + k)) ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem("cf." + k, JSON.stringify(v)); } catch { /* sem storage */ } },
@@ -82,8 +103,70 @@ async function boot() {
     const b = $("#api-badge");
     b.textContent = S.status.api_key ? `IA: ${S.status.claude_model}` : "IA desligada (sem chave)";
     b.className = "badge " + (S.status.api_key ? "ok" : "warn");
+    if (S.status.problems.length) {
+      const box = $("#problems");
+      box.replaceChildren(el("strong", {}, "O ClipForge encontrou problemas no ambiente: "),
+        ...S.status.problems.map((p) => el("div", {}, p)),
+        el("div", { class: "small" }, "Rode “python -m app.doctor” no terminal para ver como corrigir."));
+      box.classList.remove("hidden");
+    }
   } catch (e) { fail(e); }
+  setupQueue();
+  setupQuit();
   route();
+}
+
+// ---------- fila global (topo) ----------
+function setupQueue() {
+  const btn = $("#queue-btn"), panel = $("#queue-panel");
+  const kinds = { process: "Transcrição + IA", transcribe: "Transcrição", suggest: "Sugestões da IA", render: "Render" };
+  const statusPt = { queued: "na fila", running: "rodando", done: "pronto", error: "erro", cancelled: "cancelado" };
+  const refresh = async () => {
+    let list;
+    try { list = await api("GET", "/api/jobs"); } catch { return; }
+    const active = list.filter((j) => j.status === "queued" || j.status === "running");
+    btn.textContent = active.length ? `Fila (${active.length})` : "Fila";
+    btn.classList.toggle("primary", active.length > 0);
+    if (panel.classList.contains("hidden")) return;
+    if (!list.length) { panel.replaceChildren(el("p", { class: "muted" }, "Nenhuma tarefa ainda.")); return; }
+    panel.replaceChildren(...list.slice(0, 30).map((j) => {
+      const running = j.status === "queued" || j.status === "running";
+      return el("div", { class: "queue-item" },
+        el("div", {},
+          el("div", {}, el("strong", {}, kinds[j.kind] || j.kind), j.clip_id ? ` · corte ${j.clip_id}` : ""),
+          el("a", { href: `#/p/${j.project_id}`, class: "small muted" }, j.project_name),
+          el("div", { class: "small " + (j.status === "error" ? "status error" : "muted") },
+            running ? `${j.stage} ${Math.round(j.progress * 100)}%` : statusPt[j.status] + (j.message ? `: ${j.message}` : ""))),
+        running ? el("button", { class: "btn small ghost", onclick: async () => {
+          try { await api("POST", `/api/jobs/${j.id}/cancel`); refresh(); } catch (e) { fail(e); }
+        } }, "Cancelar") : el("span"),
+        running ? el("div", { class: "progress" }, el("div", { class: "bar", style: `width:${j.progress * 100}%` })) : null);
+    }));
+  };
+  btn.addEventListener("click", () => { panel.classList.toggle("hidden"); refresh(); });
+  document.addEventListener("mousedown", (e) => {
+    if (!panel.contains(e.target) && e.target !== btn) panel.classList.add("hidden");
+  });
+  refresh();
+  setInterval(refresh, 2000);
+}
+
+// ---------- encerrar ----------
+function setupQuit() {
+  const btn = $("#quit-btn");
+  btn.addEventListener("click", async () => {
+    let active = 0;
+    try { active = (await api("GET", "/api/jobs")).filter((j) => j.status === "queued" || j.status === "running").length; } catch { /* servidor já fora */ }
+    const question = active ? `Cancelar ${active} tarefa(s) e encerrar?` : "Confirmar: encerrar?";
+    confirmClick(btn, question, async () => {
+      try {
+        await api("POST", `/api/shutdown${active ? "?force=true" : ""}`);
+        document.body.replaceChildren(el("main", {},
+          el("h2", {}, "ClipForge encerrado."),
+          el("p", { class: "muted" }, "Pode fechar esta aba. Para abrir de novo, use o atalho ClipForge no menu de aplicativos.")));
+      } catch (e) { fail(e); }
+    });
+  });
 }
 
 // ======================================================================
@@ -102,6 +185,7 @@ async function projectsView() {
 
   const list = $("#project-list");
   const render = async () => {
+    if (list.querySelector("[data-armed]")) return;  // não redesenha no meio de uma confirmação
     try {
       const projects = await api("GET", "/api/projects");
       if (!projects.length) {
@@ -112,9 +196,23 @@ async function projectsView() {
         const job = p.jobs[0];
         const state = job ? `${job.stage} ${Math.round(job.progress * 100)}%`
           : !p.has_transcript ? "Não transcrito" : `${p.clips} corte(s) · ${p.rendered} renderizado(s)`;
+        const del = el("button", { class: "btn small ghost danger del", title: "Excluir projeto" }, "Excluir");
+        del.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          confirmClick(del, "Excluir mesmo?", async () => {
+            try {
+              await api("DELETE", `/api/projects/${p.id}`);
+              toast(`Projeto “${p.name}” excluído. O vídeo original no seu computador não foi apagado.`, "ok");
+              render();
+            } catch (err) { fail(err); }
+          });
+        });
         return el("a", { class: "project-card", href: `#/p/${p.id}` },
+          del,
           el("div", { class: "name" }, p.name),
-          el("div", { class: "muted small" }, `${fmt(p.info.duration)} · ${p.info.width}×${p.info.height}`),
+          el("div", { class: "muted small" }, `${fmt(p.info.duration)} · ${p.info.width}×${p.info.height}` +
+            (p.generated_bytes ? ` · gerados: ${fmtBytes(p.generated_bytes)}` : "")),
           el("div", { class: "small" }, state));
       }));
     } catch (e) { fail(e); }
@@ -172,6 +270,7 @@ function projectView(pid) {
   async function loadProject() {
     P.project = await api("GET", `/api/projects/${pid}`);
     $("#topbar-title").textContent = P.project.name;
+    $("#disk-usage").textContent = `Vídeos e legendas gerados: ${fmtBytes(P.project.generated_bytes)}. Os cortes continuam na lista.`;
     if (!video.src) video.src = P.project.source_url;
     const vertical = P.project.info.height > P.project.info.width;
     $("#vertical-note").textContent = vertical
@@ -569,11 +668,63 @@ function projectView(pid) {
         sample.append(el("span", { style: `color:${p.highlight_color}` }, t("Olá")), " ", t("mundo"));
       }
       if (p.kind === "boxed") sample.style.background = rgba(p.box_color, p.box_opacity), sample.style.padding = "2px 6px";
+      const del = p.builtin ? null : el("button", { class: "btn small ghost danger del", title: "Apagar este estilo" }, "×");
+      del?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        confirmClick(del, "apagar?", async () => {
+          try {
+            await api("DELETE", `/api/presets/${key}`);
+            S.presets = await api("GET", "/api/presets");
+            if (currentStyle() === key) store.set("style", "classic");
+            renderStylePicker(); syncStyleSelect(); loadCues();
+            toast(`Estilo “${p.name}” apagado.`, "ok");
+          } catch (err) { fail(err); }
+        });
+      });
       return el("div", { class: "style-card" + (key === currentStyle() ? " active" : ""),
-        onclick: () => { store.set("style", key); renderStylePicker(); syncStyleSelect(); loadCues(); } },
-        sample, el("span", { class: "label" }, p.name));
+        onclick: () => { store.set("style", key); renderStylePicker(); syncStyleSelect(); fillStyleForm(); loadCues(); } },
+        del, sample, el("span", { class: "label" }, p.name));
     }));
   }
+
+  // formulário "criar estilo a partir do selecionado"
+  function fillStyleForm() {
+    const f = $("#style-form"), p = S.presets[currentStyle()];
+    if (!f || !p) return;
+    f.font.replaceChildren(...(S.status?.fonts || [p.font]).map((x) => el("option", { value: x }, x)));
+    for (const [k, v] of Object.entries(p)) {
+      const input = f.elements[k];
+      if (!input || k === "name") continue;
+      if (input.type === "checkbox") input.checked = !!v;
+      else if (k === "position") input.value = Math.round(v * 100);
+      else input.value = v;
+    }
+    f.name.value = "";
+  }
+
+  function readStyleForm() {
+    const f = $("#style-form");
+    const num = (k) => Number(f.elements[k].value);
+    return {
+      name: f.name.value.trim(), kind: f.kind.value, font: f.font.value, size: num("size"),
+      primary_color: f.primary_color.value.toUpperCase(), highlight_color: f.highlight_color.value.toUpperCase(),
+      outline_color: f.outline_color.value.toUpperCase(), outline: num("outline"), shadow: num("shadow"),
+      box_color: f.box_color.value.toUpperCase(), box_opacity: num("box_opacity"),
+      position: num("position") / 100, uppercase: f.uppercase.checked, words_per_line: num("words_per_line"),
+    };
+  }
+
+  $("#style-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      const r = await api("POST", "/api/presets", readStyleForm());
+      S.presets = await api("GET", "/api/presets");
+      store.set("style", r.key);
+      renderStylePicker(); syncStyleSelect(); loadCues();
+      $("#style-editor").open = false;
+      toast(`Estilo “${r.name}” criado. Ele já está selecionado.`, "ok");
+    } catch (err) { fail(err); }
+  });
 
   function rgba(hex, a = 1) {
     const n = parseInt(hex.slice(1), 16);
@@ -853,6 +1004,21 @@ function projectView(pid) {
       } catch (e) { fail(e); }
     },
     "save-captions": saveCaptions,
+    "delete-renders": (btn) => confirmClick(btn, "Apagar mesmo?", async () => {
+      try {
+        const r = await api("DELETE", `/api/projects/${pid}/renders`);
+        toast(`${r.deleted_files} arquivo(s) apagado(s).`, "ok");
+        $("#captions-files").replaceChildren();
+        await loadProject();
+        await loadClips();
+      } catch (e) { fail(e); }
+    }),
+    "preview-style": () => {
+      if (!P.cues) { toast("Espere a transcrição para ver a prévia.", "error"); return; }
+      P.cuePreset = { ...P.cuePreset, ...readStyleForm() };
+      lastCueKey = null;
+      toast("Prévia aplicada (cores, tamanho e posição). O agrupamento de palavras muda depois de salvar.");
+    },
     "discard-captions": () => { P.edits = { ...P.savedEdits }; renderCaptionEditor(); renderTranscript(); },
     "render-all": renderAll,
     "export-captions": async () => {
@@ -945,6 +1111,7 @@ function projectView(pid) {
       $("#opt-resolution").value = store.get("export.resolution", "1080p");
       syncStyleSelect();
       renderStylePicker();
+      fillStyleForm();
       await Promise.all([loadTranscript(), loadClips()]);
       for (const j of P.project.jobs) P.jobs[j.id] = j;
       renderBanner();

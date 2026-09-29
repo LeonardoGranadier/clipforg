@@ -5,10 +5,11 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError
 
+from app.config import settings
 from app.errors import ClipForgeError
 from app.models import Word
 
@@ -20,34 +21,81 @@ ANY_PUNCT = re.compile(r"[.,!?;:…]+[\"')\]]*$")
 
 
 # --- presets ----------------------------------------------------------------
+# Estilos de fábrica ficam em app/caption_presets/ (só leitura).
+# Estilos criados pelo usuário ficam em data/presets/ e nunca substituem os de fábrica.
+
+FONTS = ("Montserrat ExtraBold", "Montserrat Bold")
+HexColor = Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")]
+
 
 class CaptionPreset(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=40)
     kind: Literal["classic", "karaoke", "pop", "boxed"]
-    font: str = "Montserrat ExtraBold"
-    size: int = 80                     # em pixels, na tela 1080x1920
-    primary_color: str = "#FFFFFF"
-    highlight_color: str = "#FFD400"
-    outline_color: str = "#000000"
-    outline: float = 6
-    shadow: float = 3
-    box_color: str = "#000000"
-    box_opacity: float = 0.6           # só no estilo boxed (0 transparente, 1 opaco)
-    position: float = 0.25             # distância da base, em fração da altura
+    font: Literal["Montserrat ExtraBold", "Montserrat Bold"] = "Montserrat ExtraBold"
+    size: int = Field(80, ge=20, le=200)             # em pixels, na tela 1080x1920
+    primary_color: HexColor = "#FFFFFF"
+    highlight_color: HexColor = "#FFD400"
+    outline_color: HexColor = "#000000"
+    outline: float = Field(6, ge=0, le=20)
+    shadow: float = Field(3, ge=0, le=20)
+    box_color: HexColor = "#000000"
+    box_opacity: float = Field(0.6, ge=0, le=1)      # só no estilo boxed (0 transparente, 1 opaco)
+    position: float = Field(0.25, ge=0.02, le=0.8)   # distância da base, em fração da altura
     uppercase: bool = True
-    words_per_line: int = 2            # 1 a 3
-    max_chars: int = 20
+    words_per_line: int = Field(2, ge=1, le=3)
+    max_chars: int = Field(20, ge=8, le=42)
 
 
-def list_presets() -> list[str]:
+def user_presets_dir() -> Path:
+    return settings.data_dir / "presets"
+
+
+def builtin_presets() -> list[str]:
     return sorted(p.stem for p in PRESETS_DIR.glob("*.json"))
 
 
+def user_presets() -> list[str]:
+    d = user_presets_dir()
+    return sorted(p.stem for p in d.glob("*.json")) if d.exists() else []
+
+
+def list_presets() -> list[str]:
+    return builtin_presets() + [k for k in user_presets() if k not in builtin_presets()]
+
+
 def load_preset(name: str) -> CaptionPreset:
-    path = PRESETS_DIR / f"{name}.json"
-    if not path.exists():
-        raise ClipForgeError(f"Estilo de legenda '{name}' não existe. Opções: {', '.join(list_presets())}")
-    return CaptionPreset.model_validate_json(path.read_text(encoding="utf-8"))
+    for d in (PRESETS_DIR, user_presets_dir()):
+        path = d / f"{name}.json"
+        if re.fullmatch(r"[a-z0-9-]+", name) and path.exists():
+            try:
+                return CaptionPreset.model_validate_json(path.read_text(encoding="utf-8"))
+            except ValidationError as e:
+                raise ClipForgeError(f"O estilo '{name}' tem valores inválidos ({path}): {e.errors()[0]['msg']}") from e
+    raise ClipForgeError(f"Estilo de legenda '{name}' não existe. Opções: {', '.join(list_presets())}")
+
+
+def save_user_preset(preset: CaptionPreset) -> str:
+    """Salva um novo estilo do usuário. Retorna a chave (nome sem acentos/espaços)."""
+    from app.projects import slugify  # import local: evita ciclo
+
+    key = slugify(preset.name, 30)
+    if key in builtin_presets():
+        raise ClipForgeError(f"Já existe um estilo de fábrica chamado '{preset.name}'. Escolha outro nome.")
+    if key in user_presets():
+        raise ClipForgeError(f"Já existe um estilo chamado '{preset.name}'. Escolha outro nome ou apague o antigo.")
+    d = user_presets_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{key}.json").write_text(preset.model_dump_json(indent=2), encoding="utf-8")
+    return key
+
+
+def delete_user_preset(key: str) -> None:
+    if key in builtin_presets():
+        raise ClipForgeError("Estilos de fábrica não podem ser apagados.")
+    path = user_presets_dir() / f"{key}.json"
+    if not re.fullmatch(r"[a-z0-9-]+", key) or not path.exists():
+        raise ClipForgeError(f"Estilo '{key}' não encontrado.")
+    path.unlink()
 
 
 # --- edições do usuário -----------------------------------------------------

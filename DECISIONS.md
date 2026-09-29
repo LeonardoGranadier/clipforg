@@ -73,3 +73,18 @@
   - sem rosto: mantém a posição por 1 s e depois volta ao centro devagar.
 - **Vários rostos:** segue o maior. Diarização (pyannote) só se o usuário pedir.
 - **Progresso do render no modo face:** 25% para a análise e 75% para o render.
+
+## 2026-09-29: Fase 6
+
+- **Estilos do usuário em `data/presets/`**, separados dos de fábrica (`app/caption_presets/`, só leitura). Um nome igual a um estilo existente é recusado ("crie como um novo preset sem alterar os existentes"). Todos os campos são validados (cores `#RRGGBB`, tamanho 20–200, posição 2–80%, fonte só entre as incluídas).
+- **A prévia do formulário de estilo** aplica na hora cores, tamanho e posição. Mudanças de tipo ou de palavras por legenda aparecem depois de salvar, porque o agrupamento vem do backend.
+- **A fila continua em memória**, com um único trabalhador (Fase 4). Nesta fase ganhou a visão global no topo, o cancelamento de todas as tarefas ao encerrar e a limpeza de tarefas antigas (guarda as últimas 200).
+- **Excluir projeto:** cancela as tarefas do projeto, apaga a pasta e as linhas do banco. A pasta `source/` tem só um hard link ou uma cópia, então o arquivo original do usuário nunca é apagado (há teste para isso).
+- **Limpeza ao iniciar:** arquivos `.part.*`, `.face.txt`, `audio.tmp.wav`, uploads interrompidos e logs por corte com mais de 30 dias. O `clipforge.log` gira em 5 MB × 3.
+- **Erros:**
+  - de validação (422) em português, com o nome do campo;
+  - erros inesperados viram "Erro inesperado (Tipo). Detalhes em data/logs/clipforge.log", com o traceback só no log;
+  - problemas críticos do ambiente (FFmpeg, libass, fontes, modelo de rosto) aparecem num aviso na tela. As verificações lentas (NVENC/CUDA) ficam só no `doctor`.
+- **Encerrar pela interface:** `POST /api/shutdown` (com `force=true` se houver tarefas, que são canceladas antes) envia SIGINT ao próprio processo. Assim o uvicorn encerra de forma limpa, e o atalho do menu sobe o servidor de novo quando necessário.
+- **Confirmações em dois cliques** em todo lugar (excluir projeto, apagar vídeos, apagar estilo, encerrar), sem `alert`/`confirm`. A lista de projetos não se redesenha enquanto há uma confirmação pendente.
+- **Não implementado (fica como sugestão):** trocar o `-preset` do libx264 para acelerar o render; diarização para seguir quem fala; fila persistente.

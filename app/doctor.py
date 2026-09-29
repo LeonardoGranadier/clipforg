@@ -134,6 +134,19 @@ def check_dirs() -> Check:
     return Check("Pastas de dados", status, f"{settings.data_dir} ({free_gb:.0f} GB livres)")
 
 
+def check_face_model() -> Check:
+    model = settings.root / "models" / "face_detection_yunet_2023mar.onnx"
+    if not model.exists():
+        return Check("Modelo de rosto", FAIL, f"arquivo não encontrado: {model} (o modo 'seguir o rosto' não funciona)")
+    return Check("Modelo de rosto", OK, model.name)
+
+
+def critical_problems() -> list[str]:
+    """Verificações rápidas usadas pela interface ao iniciar (sem os testes lentos de GPU)."""
+    checks = [check_binary("ffmpeg"), check_binary("ffprobe"), check_ass_filter(), check_fonts(), check_face_model()]
+    return [f"{c.name}: {c.detail}" for c in checks if c.status == FAIL]
+
+
 def run_all() -> list[Check]:
     return [
         check_python(),
@@ -146,6 +159,7 @@ def run_all() -> list[Check]:
         check_cuda(),
         check_api_key(),
         check_fonts(),
+        check_face_model(),
         check_dirs(),
     ]
 

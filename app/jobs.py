@@ -70,15 +70,41 @@ class JobQueue:
         return self._jobs.get(job_id)
 
     def for_project(self, project_id: str) -> list[Job]:
-        return [j for j in self._jobs.values() if j.project_id == project_id]
+        return [j for j in list(self._jobs.values()) if j.project_id == project_id]
 
     def active(self, project_id: str, kind: str | None = None, clip_id: str | None = None) -> Job | None:
         """Tarefa ainda não terminada (na fila ou rodando) com esses filtros."""
-        for j in self._jobs.values():
+        for j in list(self._jobs.values()):
             if (j.project_id == project_id and j.status in ("queued", "running")
                     and (kind is None or j.kind == kind) and (clip_id is None or j.clip_id == clip_id)):
                 return j
         return None
+
+    def all(self, limit: int = 50) -> list[Job]:
+        """Tarefas mais recentes primeiro (ativas sempre aparecem)."""
+        jobs = sorted(list(self._jobs.values()), key=lambda j: j.created_at, reverse=True)
+        active = [j for j in jobs if j.status in ("queued", "running")]
+        done = [j for j in jobs if j.status not in ("queued", "running")]
+        return active + done[: max(0, limit - len(active))]
+
+    def any_active(self, project_id: str | None = None) -> list[Job]:
+        return [j for j in list(self._jobs.values()) if j.status in ("queued", "running")
+                and (project_id is None or j.project_id == project_id)]
+
+    def cancel_all(self, project_id: str | None = None, timeout: float = 8) -> None:
+        """Cancela tarefas (de um projeto ou todas) e espera as que estão rodando pararem."""
+        for j in self.any_active(project_id):
+            self.cancel(j.id)
+        end = time.time() + timeout
+        while time.time() < end and any(j.status == "running" for j in self.any_active(project_id)):
+            time.sleep(0.1)
+
+    def _prune(self, keep: int = 200) -> None:
+        with self._lock:
+            done = sorted((j for j in list(self._jobs.values()) if j.status not in ("queued", "running")),
+                          key=lambda j: j.created_at)
+            for j in done[: max(0, len(done) - keep)]:
+                self._jobs.pop(j.id, None)
 
     def cancel(self, job_id: str) -> Job | None:
         job = self._jobs.get(job_id)
@@ -109,12 +135,13 @@ class JobQueue:
                 log.exception("Tarefa %s (%s) falhou", job.id, job.kind)
             finally:
                 self._queue.task_done()
+                self._prune()
 
     def wait_idle(self, timeout: float = 60) -> None:
         """Espera a fila esvaziar (usado nos testes)."""
         end = time.time() + timeout
         while time.time() < end:
-            if all(j.status not in ("queued", "running") for j in self._jobs.values()):
+            if all(j.status not in ("queued", "running") for j in list(self._jobs.values())):
                 return
             time.sleep(0.05)
         raise TimeoutError("fila não terminou a tempo")

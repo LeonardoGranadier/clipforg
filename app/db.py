@@ -133,3 +133,9 @@ def reset_interrupted_renders() -> None:
     """Na inicialização: renders interrompidos (servidor fechado no meio) voltam a 'pending'."""
     with connect() as c:
         c.execute("UPDATE clips SET status = 'pending' WHERE status = 'rendering'")
+
+
+def delete_project(pid: str) -> None:
+    with connect() as c:
+        c.execute("DELETE FROM clips WHERE project_id = ?", (pid,))
+        c.execute("DELETE FROM projects WHERE id = ?", (pid,))

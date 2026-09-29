@@ -7,18 +7,23 @@ from __future__ import annotations
 import errno
 import json
 import logging
+import logging.handlers
+import os
 import re
 import shutil
+import signal
 import tempfile
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import db, tasks
+from app import db, doctor, tasks
 from app.config import settings
 from app.errors import ClipForgeError, NotFound
 from app.jobs import jobs
@@ -29,7 +34,8 @@ from app.pipeline.reframe import MODES, RESOLUTIONS
 from app.pipeline.render import caption_words, export_full_captions
 from app.pipeline.snap import snap_range
 from app.pipeline.transcribe import load_transcript
-from app.projects import Project, get_project, open_project, register_existing
+from app.projects import (Project, cleanup_leftovers, delete_project, delete_renders, dir_size, get_project,
+                          open_project, register_existing)
 
 log = logging.getLogger(__name__)
 STATIC = Path(__file__).resolve().parent / "static"
@@ -38,7 +44,8 @@ VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"}
 
 def setup_logging() -> None:
     settings.logs_dir.mkdir(parents=True, exist_ok=True)
-    handler = logging.FileHandler(settings.logs_dir / "clipforge.log", encoding="utf-8")
+    handler = logging.handlers.RotatingFileHandler(settings.logs_dir / "clipforge.log", maxBytes=5_000_000,
+                                                   backupCount=3, encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     root = logging.getLogger()
     root.setLevel(logging.INFO)
@@ -50,8 +57,12 @@ def setup_logging() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     setup_logging()
+    cleanup_leftovers()
     db.reset_interrupted_renders()
     register_existing()
+    app.state.problems = doctor.critical_problems()
+    for p in app.state.problems:
+        log.error("Problema no ambiente: %s", p)
     yield
 
 
@@ -61,6 +72,45 @@ app = FastAPI(title="ClipForge", lifespan=lifespan)
 @app.exception_handler(ClipForgeError)
 async def clipforge_error(_: Request, exc: ClipForgeError) -> JSONResponse:
     return JSONResponse({"detail": str(exc)}, status_code=404 if isinstance(exc, NotFound) else 400)
+
+
+FIELD_NAMES = {
+    "size": "tamanho", "position": "posição", "primary_color": "cor principal", "highlight_color": "cor de destaque",
+    "outline_color": "cor do contorno", "box_color": "cor da caixa", "box_opacity": "opacidade da caixa",
+    "outline": "contorno", "shadow": "sombra", "words_per_line": "palavras por linha", "max_chars": "caracteres por linha",
+    "font": "fonte", "kind": "tipo", "name": "nome", "start": "início", "end": "fim", "file": "arquivo",
+}
+
+
+def _pt_error(err: dict) -> str:
+    field = next((str(x) for x in reversed(err.get("loc", [])) if isinstance(x, str)), "")
+    name = FIELD_NAMES.get(field, field)
+    ctx, t = err.get("ctx") or {}, err.get("type", "")
+    msg = {
+        "missing": "é obrigatório",
+        "greater_than_equal": f"precisa ser no mínimo {ctx.get('ge')}",
+        "greater_than": f"precisa ser maior que {ctx.get('gt')}",
+        "less_than_equal": f"precisa ser no máximo {ctx.get('le')}",
+        "string_pattern_mismatch": "tem formato inválido (cores: #RRGGBB)",
+        "string_too_short": "não pode ficar vazio",
+        "string_too_long": f"pode ter no máximo {ctx.get('max_length')} caracteres",
+        "literal_error": f"precisa ser uma destas opções: {str(ctx.get('expected')).replace(' or ', ' ou ')}",
+        "int_parsing": "precisa ser um número inteiro",
+        "float_parsing": "precisa ser um número",
+    }.get(t, err.get("msg", "inválido"))
+    return f"{name.capitalize()} {msg}." if name else f"Valor {msg}."
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+    return JSONResponse({"detail": " ".join(_pt_error(e) for e in exc.errors()[:3])}, status_code=422)
+
+
+@app.exception_handler(Exception)
+async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    log.exception("Erro inesperado em %s %s", request.method, request.url.path)
+    return JSONResponse({"detail": f"Erro inesperado ({type(exc).__name__}). "
+                                   "Detalhes em data/logs/clipforge.log."}, status_code=500)
 
 
 # --- helpers -----------------------------------------------------------------
@@ -93,6 +143,7 @@ def project_out(project: Project) -> dict:
         **row,
         "source_url": media_url(project, project.source),
         "has_transcript": project.transcript_path.exists(),
+        "generated_bytes": dir_size(project.clips_dir) + dir_size(project.exports_dir),
         "clips": len(clips),
         "rendered": sum(1 for c in clips if c.status == "done"),
         "jobs": active,
@@ -115,12 +166,33 @@ def status() -> dict:
         "resolutions": list(RESOLUTIONS),
         "clip_min_seconds": settings.clip_min_seconds,
         "clip_max_seconds": settings.clip_max_seconds,
+        "fonts": list(captions.FONTS),
+        "problems": getattr(app.state, "problems", []),
     }
 
 
 @app.get("/api/presets")
 def presets() -> dict:
-    return {name: captions.load_preset(name).model_dump() for name in captions.list_presets()}
+    builtin = set(captions.builtin_presets())
+    out = {}
+    for name in captions.list_presets():
+        try:
+            out[name] = {**captions.load_preset(name).model_dump(), "builtin": name in builtin}
+        except ClipForgeError as e:
+            log.error("%s", e)  # estilo do usuário corrompido: ignora na lista
+    return out
+
+
+@app.post("/api/presets", status_code=201)
+def create_preset(preset: captions.CaptionPreset) -> dict:
+    key = captions.save_user_preset(preset)
+    return {"key": key, **preset.model_dump(), "builtin": False}
+
+
+@app.delete("/api/presets/{key}")
+def remove_preset(key: str) -> dict:
+    captions.delete_user_preset(key)
+    return {"deleted": key}
 
 
 # --- projetos ------------------------------------------------------------------
@@ -166,6 +238,26 @@ def upload(file: UploadFile = File(...)) -> dict:
 @app.get("/api/projects/{pid}")
 def project_detail(pid: str) -> dict:
     return project_out(get_project(pid))
+
+
+@app.delete("/api/projects/{pid}")
+def remove_project(pid: str) -> dict:
+    """Apaga o projeto (o vídeo original no seu computador continua onde estava)."""
+    get_project(pid)
+    jobs.cancel_all(pid)
+    if jobs.any_active(pid):
+        raise ClipForgeError("Uma tarefa deste projeto ainda está terminando. Tente de novo em alguns segundos.")
+    delete_project(pid)
+    return {"deleted": pid}
+
+
+@app.delete("/api/projects/{pid}/renders")
+def remove_renders(pid: str) -> dict:
+    """Apaga os vídeos e legendas gerados para liberar espaço (os cortes continuam na lista)."""
+    project = get_project(pid)
+    if jobs.active(pid, "render"):
+        raise ClipForgeError("Há renders em andamento neste projeto. Cancele ou espere terminar.")
+    return {"deleted_files": delete_renders(project)}
 
 
 @app.post("/api/projects/{pid}/process")
@@ -372,6 +464,28 @@ def render_all(pid: str, opts: RenderOptions) -> list[dict]:
 def project_jobs(pid: str) -> list[dict]:
     get_project(pid)
     return [j.public() for j in jobs.for_project(pid)]
+
+
+@app.get("/api/jobs")
+def all_jobs() -> list[dict]:
+    """Fila de todos os projetos (as ativas primeiro)."""
+    names = {p["id"]: p["name"] for p in db.list_projects()}
+    return [{**j.public(), "project_name": names.get(j.project_id, j.project_id)} for j in jobs.all()]
+
+
+@app.post("/api/shutdown")
+def shutdown(force: bool = False) -> dict:
+    """Encerra o ClipForge. Com tarefas em andamento, só com force=true (elas são canceladas)."""
+    active = jobs.any_active()
+    if active and not force:
+        raise ClipForgeError(f"Há {len(active)} tarefa(s) em andamento. Cancele ou confirme o encerramento.")
+
+    def stop() -> None:
+        jobs.cancel_all()
+        os.kill(os.getpid(), signal.SIGINT)
+
+    threading.Timer(0.5, stop).start()
+    return {"stopping": True}
 
 
 @app.get("/api/jobs/{job_id}")

@@ -136,3 +136,56 @@ def register_existing() -> int:
         project._import_legacy_clips()
         n += 1
     return n
+
+
+def dir_size(path: Path) -> int:
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) if path.exists() else 0
+
+
+def delete_project(pid: str) -> None:
+    """Apaga o projeto (pasta e banco). O vídeo original no computador do usuário não é tocado:
+    a pasta source/ tem só um link ou uma cópia dele."""
+    project = get_project(pid)
+    shutil.rmtree(project.dir, ignore_errors=True)
+    db.delete_project(pid)
+
+
+def delete_renders(project: Project) -> int:
+    """Apaga os vídeos e legendas gerados (libera espaço). Retorna quantos arquivos foram apagados."""
+    n = 0
+    for d in (project.clips_dir, project.exports_dir):
+        for f in d.glob("*"):
+            if f.is_file():
+                f.unlink()
+                n += 1
+    clips = project.load_clips()
+    for c in clips:
+        c.status, c.output_path, c.style, c.vertical_mode = "pending", None, None, None
+    project.save_clips(clips)
+    return n
+
+
+def cleanup_leftovers(log_days: int = 30) -> int:
+    """Na inicialização: remove sobras de execuções interrompidas e logs antigos."""
+    import time
+
+    removed = 0
+    patterns = ("clips/*.part.*", "clips/*.face.txt", "audio.tmp.wav")
+    if settings.projects_dir.exists():
+        for d in settings.projects_dir.iterdir():
+            for pat in patterns:
+                for f in d.glob(pat):
+                    f.unlink(missing_ok=True)
+                    removed += 1
+    uploads = settings.data_dir / "uploads"
+    if uploads.exists():
+        for d in uploads.iterdir():
+            shutil.rmtree(d, ignore_errors=True)
+            removed += 1
+    if settings.logs_dir.exists():
+        limit = time.time() - log_days * 86400
+        for f in settings.logs_dir.glob("*.log"):
+            if f.name != "clipforge.log" and f.stat().st_mtime < limit:
+                f.unlink(missing_ok=True)
+                removed += 1
+    return removed

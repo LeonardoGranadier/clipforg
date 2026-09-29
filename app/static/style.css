@@ -216,3 +216,28 @@ select {
 }
 .toast.error { border-left-color: var(--danger); }
 .toast.ok { border-left-color: var(--ok); }
+
+/* ---- Fase 6 ---- */
+.queue-panel {
+  position: fixed; right: 16px; top: 48px; width: 380px; max-height: 60vh; overflow: auto; z-index: 40;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0,0,0,.5); padding: 10px;
+}
+.queue-item { padding: 8px; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; }
+.queue-item:last-child { border-bottom: 0; }
+.queue-item .progress { grid-column: 1 / -1; }
+#problems { margin: 12px 20px 0; }
+.project-card { position: relative; }
+.project-card .del { position: absolute; top: 8px; right: 8px; }
+.style-card { position: relative; }
+.style-card .del { position: absolute; top: 2px; right: 4px; padding: 0 6px; font-size: 12px; }
+.style-editor { margin: 12px 0; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px; }
+.style-editor summary { cursor: pointer; color: var(--blue); }
+.style-form { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 12px; margin-top: 10px; }
+.style-form label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.style-form label.check { flex-direction: row; align-items: center; gap: 6px; }
+.style-form input:not([type=checkbox]):not([type=color]) {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 5px 7px; font: inherit;
+}
+.style-form input[type=color] { width: 100%; height: 30px; background: none; border: 1px solid var(--border); border-radius: 4px; }
+.style-form .form-actions { grid-column: 1 / -1; display: flex; gap: 8px; }

@@ -136,3 +136,79 @@ def test_export_captions_only(client, project_id):
 def test_media_blocks_path_traversal(client, project_id):
     assert client.get(f"/media/{project_id}/../../clipforge.db").status_code == 404
     assert client.get(f"/media/{project_id}/transcript.json").status_code == 404
+
+
+# --- Fase 6 ------------------------------------------------------------------
+
+def test_status_reports_no_problems(client):
+    s = client.get("/api/status").json()
+    assert s["problems"] == []
+    assert "Montserrat ExtraBold" in s["fonts"]
+
+
+def test_user_preset_lifecycle(client, project_id):
+    body = {"name": "Meu Amarelo", "kind": "karaoke", "size": 90, "highlight_color": "#00FF88", "position": 0.3}
+    r = client.post("/api/presets", json=body)
+    assert r.status_code == 201, r.text
+    key = r.json()["key"]
+    assert key == "meu-amarelo"
+    presets = client.get("/api/presets").json()
+    assert presets[key]["builtin"] is False and presets["classic"]["builtin"] is True
+    # o novo estilo funciona na prévia e no render
+    assert client.get(f"/api/projects/{project_id}/captions/cues?style={key}").status_code == 200
+    # nome repetido e nome de estilo de fábrica são recusados
+    assert client.post("/api/presets", json=body).status_code == 400
+    assert client.post("/api/presets", json={**body, "name": "Classic"}).status_code == 400
+    # estilos de fábrica não podem ser apagados
+    assert client.delete("/api/presets/classic").status_code == 400
+    assert client.delete(f"/api/presets/{key}").status_code == 200
+    assert key not in client.get("/api/presets").json()
+
+
+@pytest.mark.parametrize("bad", [
+    {"highlight_color": "amarelo"}, {"size": 5}, {"position": 2}, {"words_per_line": 9}, {"font": "Comic Sans"},
+])
+def test_user_preset_validation(client, bad):
+    r = client.post("/api/presets", json={"name": "Ruim", "kind": "classic", **bad})
+    assert r.status_code == 422
+
+
+def test_jobs_list_includes_project_name(client, project_id):
+    js = client.get("/api/jobs").json()
+    assert js and all("project_name" in j for j in js)
+
+
+def test_delete_renders(client, project_id):
+    client.put(f"/api/projects/{project_id}/clips", json=[{"id": "m01", "start": 1, "end": 3, "title": "a"}])
+    client.post(f"/api/projects/{project_id}/clips/m01/render", json={})
+    jobs.wait_idle(120)
+    assert client.get(f"/api/projects/{project_id}").json()["generated_bytes"] > 0
+    r = client.delete(f"/api/projects/{project_id}/renders").json()
+    assert r["deleted_files"] >= 1
+    p = client.get(f"/api/projects/{project_id}").json()
+    assert p["generated_bytes"] == 0
+    assert client.get(f"/api/projects/{project_id}/clips").json()[0]["status"] == "pending"
+
+
+def test_shutdown_refuses_with_active_jobs_then_forces(client, project_id, monkeypatch):
+    import app.main as main
+
+    killed = []
+    monkeypatch.setattr(main.os, "kill", lambda pid, sig: killed.append(sig))
+    monkeypatch.setattr(main.threading, "Timer", lambda t, fn: type("T", (), {"start": lambda self: fn()})())
+    client.put(f"/api/projects/{project_id}/clips", json=[{"id": "m01", "start": 0, "end": 19, "title": "a"}])
+    client.post(f"/api/projects/{project_id}/clips/m01/render", json={"vertical": "blur"})
+    r = client.post("/api/shutdown")
+    assert r.status_code == 400 and "andamento" in r.json()["detail"]
+    assert client.post("/api/shutdown?force=true").json() == {"stopping": True}
+    assert killed and not jobs.any_active()
+
+
+def test_delete_project_last(client, project_id, sample_video):
+    # por último: apaga o projeto usado pelos outros testes
+    source = get_project(project_id).source
+    assert client.delete(f"/api/projects/{project_id}").status_code == 200
+    assert not source.exists()
+    assert sample_video.exists()  # o vídeo original não é tocado
+    assert client.get(f"/api/projects/{project_id}").status_code == 404
+    assert project_id not in [p["id"] for p in client.get("/api/projects").json()]

@@ -11,7 +11,11 @@
     <a href="#/" class="brand">ClipForge</a>
     <span id="topbar-title" class="topbar-title"></span>
     <span id="api-badge" class="badge"></span>
+    <button id="queue-btn" class="btn small ghost" title="Tarefas de todos os projetos">Fila</button>
+    <button id="quit-btn" class="btn small ghost" title="Fecha o ClipForge (o servidor para de rodar)">Encerrar</button>
   </header>
+  <div id="queue-panel" class="queue-panel hidden"></div>
+  <div id="problems" class="notice error hidden"></div>
 
   <main id="view"></main>
 
@@ -88,6 +92,33 @@
             <h3>Estilo</h3>
             <div id="style-picker" class="style-picker"></div>
             <p class="muted small">A prévia sobre o vídeo é aproximada; o resultado final vem do render.</p>
+            <details id="style-editor" class="style-editor">
+              <summary>Criar um estilo a partir do selecionado</summary>
+              <form id="style-form" class="style-form">
+                <label>Nome <input name="name" required maxlength="40" placeholder="Ex.: Meu amarelo"></label>
+                <label>Tipo
+                  <select name="kind">
+                    <option value="classic">Clássico</option><option value="karaoke">Karaokê</option>
+                    <option value="pop">Pop (uma palavra)</option><option value="boxed">Caixa</option>
+                  </select></label>
+                <label>Fonte <select name="font"></select></label>
+                <label>Tamanho <input name="size" type="number" min="20" max="200"></label>
+                <label>Cor do texto <input name="primary_color" type="color"></label>
+                <label>Cor de destaque <input name="highlight_color" type="color"></label>
+                <label>Cor do contorno <input name="outline_color" type="color"></label>
+                <label>Contorno <input name="outline" type="number" min="0" max="20" step="0.5"></label>
+                <label>Sombra <input name="shadow" type="number" min="0" max="20" step="0.5"></label>
+                <label>Cor da caixa <input name="box_color" type="color"></label>
+                <label>Opacidade da caixa <input name="box_opacity" type="number" min="0" max="1" step="0.05"></label>
+                <label>Posição (% da altura, a partir da base) <input name="position" type="number" min="2" max="80" step="1"></label>
+                <label>Palavras por legenda <input name="words_per_line" type="number" min="1" max="3"></label>
+                <label class="check"><input name="uppercase" type="checkbox"> Tudo em maiúsculas</label>
+                <div class="form-actions">
+                  <button type="button" class="btn small" data-act="preview-style">Ver prévia</button>
+                  <button type="submit" class="btn small primary">Salvar como novo estilo</button>
+                </div>
+              </form>
+            </details>
             <h3>Corrigir texto <span class="muted small">(clique numa palavra para editar; deixe vazio para remover)</span></h3>
             <div class="toolbar">
               <button class="btn small primary" data-act="save-captions" disabled>Salvar correções</button>
@@ -124,6 +155,11 @@
               <button class="btn primary" data-act="render-all">Renderizar todos</button>
             </div>
             <div id="export-list" class="export-list"></div>
+            <h3>Espaço em disco</h3>
+            <div class="toolbar">
+              <button class="btn small ghost danger" data-act="delete-renders">Apagar vídeos gerados</button>
+              <span class="muted small" id="disk-usage"></span>
+            </div>
             <h3>Só legendas</h3>
             <p class="muted small">Gera .srt e .ass do vídeo inteiro, sem cortar (usa o estilo escolhido acima).</p>
             <div class="toolbar">
