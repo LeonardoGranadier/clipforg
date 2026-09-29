@@ -8,20 +8,21 @@ from app.models import VideoInfo
 VerticalMode = Literal["fit", "center", "blur"]
 MODES: tuple[str, ...] = ("fit", "center", "blur")
 OUT_W, OUT_H, OUT_FPS = 1080, 1920, 30
+RESOLUTIONS: dict[str, tuple[int, int]] = {"1080p": (1080, 1920), "720p": (720, 1280)}
 
 
 def is_vertical(info: VideoInfo) -> bool:
     return info.height > info.width
 
 
-def vertical_filter(mode: VerticalMode, info: VideoInfo) -> str:
-    """Filtro FFmpeg (-vf) que transforma o vídeo em 1080x1920 a 30 fps.
+def vertical_filter(mode: VerticalMode, info: VideoInfo, size: tuple[int, int] = (OUT_W, OUT_H)) -> str:
+    """Filtro FFmpeg (-vf) que transforma o vídeo em 9:16 (padrão 1080x1920) a 30 fps.
 
     Vídeos que já são verticais não são reenquadrados: só se ajustam à tela (fit).
     """
     if is_vertical(info):
         mode = "fit"
-    W, H = OUT_W, OUT_H
+    W, H = size
     if mode == "fit":
         # Barras pretas. force_original_aspect_ratio também cobre vídeos mais "altos" que 9:16.
         chain = (f"scale={W}:{H}:force_original_aspect_ratio=decrease,"

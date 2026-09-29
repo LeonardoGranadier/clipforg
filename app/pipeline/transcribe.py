@@ -4,11 +4,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
 from app.config import settings
-from app.errors import ClipForgeError
+from app.errors import Cancelled, ClipForgeError
 from app.models import Segment, Transcript, Word
 from app.pipeline.ffmpeg import run_ffmpeg
 
@@ -46,10 +47,10 @@ def _device() -> tuple[str, str]:
     return "cpu", "int8"
 
 
-def extract_audio(video: Path, wav: Path) -> None:
+def extract_audio(video: Path, wav: Path, cancel: threading.Event | None = None) -> None:
     run_ffmpeg(
         ["-y", "-i", str(video), "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(wav)],
-        log_path=settings.logs_dir / "extract_audio.log",
+        log_path=settings.logs_dir / "extract_audio.log", cancel=cancel,
     )
 
 
@@ -64,6 +65,7 @@ def transcribe(
     language: str | None = None,
     model_name: str | None = None,
     on_progress: Callable[[float], None] | None = None,
+    cancel: threading.Event | None = None,
 ) -> Transcript:
     """Transcreve o vídeo e salva em `out_path`. Se o arquivo já existe, só carrega (cache)."""
     if out_path.exists():
@@ -75,7 +77,7 @@ def transcribe(
 
     wav = out_path.parent / "audio.tmp.wav"
     try:
-        extract_audio(video, wav)
+        extract_audio(video, wav, cancel)
         os.environ.setdefault("HF_HUB_VERBOSITY", "error")  # esconde avisos do download do modelo
         try:
             from faster_whisper import WhisperModel
@@ -98,6 +100,8 @@ def transcribe(
         )
         segments: list[Segment] = []
         for seg in segments_iter:
+            if cancel is not None and cancel.is_set():
+                raise Cancelled()
             raw = [Word(word=w.word.strip(), start=w.start, end=w.end, prob=round(w.probability, 3))
                    for w in (seg.words or []) if w.word.strip()]
             if not raw:

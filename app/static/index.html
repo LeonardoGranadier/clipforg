@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ClipForge</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a href="#/" class="brand">ClipForge</a>
+    <span id="topbar-title" class="topbar-title"></span>
+    <span id="api-badge" class="badge"></span>
+  </header>
+
+  <main id="view"></main>
+
+  <div id="toasts" aria-live="polite"></div>
+
+  <!-- ===== Tela: projetos ===== -->
+  <template id="tpl-projects">
+    <section class="projects">
+      <div class="upload" id="drop">
+        <p class="upload-title">Envie um vídeo seu</p>
+        <p class="muted">Arraste o arquivo aqui ou
+          <label class="linklike">escolha no computador<input type="file" id="file" accept="video/*" hidden></label>
+        </p>
+        <p class="warning">Use apenas vídeos seus ou com autorização.</p>
+        <div class="progress hidden" id="upload-progress"><div class="bar"></div><span class="label"></span></div>
+      </div>
+      <h2>Projetos</h2>
+      <div id="project-list" class="project-list"></div>
+    </section>
+  </template>
+
+  <!-- ===== Tela: projeto ===== -->
+  <template id="tpl-project">
+    <section class="project">
+      <div id="job-banner" class="job-banner hidden">
+        <div class="job-text"><strong class="stage"></strong> <span class="pct"></span></div>
+        <div class="progress"><div class="bar"></div></div>
+        <button class="btn small ghost" data-act="cancel-job">Cancelar</button>
+      </div>
+      <div id="notice" class="notice hidden"></div>
+
+      <div class="workspace">
+        <div class="left">
+          <div class="player-wrap" id="player-wrap">
+            <video id="player" controls preload="metadata" playsinline></video>
+            <div id="caption-preview" class="caption-preview hidden"></div>
+          </div>
+          <div class="timeline" id="timeline" title="Clique para ir até o ponto">
+            <div class="tl-marks" id="tl-marks"></div>
+            <div class="tl-pending hidden" id="tl-pending"></div>
+            <div class="tl-head" id="tl-head"></div>
+          </div>
+          <div class="mark-bar">
+            <span class="time" id="cur-time">00:00.0</span>
+            <button class="btn small" data-act="mark-in" title="Marcar o início no ponto atual do vídeo">[ Marcar início</button>
+            <button class="btn small" data-act="mark-out" title="Marcar o fim no ponto atual do vídeo">Marcar fim ]</button>
+            <span class="muted" id="mark-range"></span>
+            <button class="btn small primary hidden" data-act="create-from-marks">Criar corte</button>
+          </div>
+        </div>
+
+        <div class="right">
+          <nav class="tabs">
+            <button data-tab="clips" class="active">Cortes</button>
+            <button data-tab="captions">Legendas</button>
+            <button data-tab="export">Exportar</button>
+          </nav>
+
+          <!-- Cortes -->
+          <div class="tab" data-panel="clips">
+            <div class="toolbar">
+              <button class="btn small" data-act="suggest">Sugerir cortes com IA</button>
+              <button class="btn small hidden" data-act="transcribe">Transcrever</button>
+              <span class="muted" id="save-state"></span>
+            </div>
+            <div id="clip-list" class="clip-list"></div>
+            <h3>Transcrição <span class="muted small">(clique numa palavra para ir até ela; selecione um trecho para criar um corte)</span></h3>
+            <div id="transcript" class="transcript"></div>
+            <button id="sel-btn" class="btn small primary floating hidden" data-act="create-from-selection"></button>
+          </div>
+
+          <!-- Legendas -->
+          <div class="tab hidden" data-panel="captions">
+            <h3>Estilo</h3>
+            <div id="style-picker" class="style-picker"></div>
+            <p class="muted small">A prévia sobre o vídeo é aproximada; o resultado final vem do render.</p>
+            <h3>Corrigir texto <span class="muted small">(clique numa palavra para editar; deixe vazio para remover)</span></h3>
+            <div class="toolbar">
+              <button class="btn small primary" data-act="save-captions" disabled>Salvar correções</button>
+              <button class="btn small ghost" data-act="discard-captions" disabled>Descartar</button>
+              <span class="muted" id="captions-state"></span>
+            </div>
+            <div id="caption-editor" class="transcript editable"></div>
+          </div>
+
+          <!-- Exportar -->
+          <div class="tab hidden" data-panel="export">
+            <div class="export-options">
+              <label>Formato
+                <select id="opt-vertical">
+                  <option value="">Original (sem reenquadrar)</option>
+                  <option value="fit">Vertical 9:16 · fit (barras pretas)</option>
+                  <option value="center">Vertical 9:16 · center (recorte central)</option>
+                  <option value="blur" selected>Vertical 9:16 · blur (fundo desfocado)</option>
+                </select>
+              </label>
+              <label>Legenda
+                <select id="opt-style"></select>
+              </label>
+              <label>Resolução
+                <select id="opt-resolution">
+                  <option value="1080p">1080 × 1920</option>
+                  <option value="720p">720 × 1280</option>
+                </select>
+              </label>
+            </div>
+            <p class="muted small" id="vertical-note"></p>
+            <div class="toolbar">
+              <button class="btn primary" data-act="render-all">Renderizar todos</button>
+            </div>
+            <div id="export-list" class="export-list"></div>
+            <h3>Só legendas</h3>
+            <p class="muted small">Gera .srt e .ass do vídeo inteiro, sem cortar (usa o estilo escolhido acima).</p>
+            <div class="toolbar">
+              <button class="btn small" data-act="export-captions">Gerar legendas do vídeo inteiro</button>
+              <span id="captions-files"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </template>
+
+  <script src="/app.js"></script>
+</body>
+</html>

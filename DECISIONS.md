@@ -46,3 +46,16 @@
 - **Saída sempre com `fps=30,setsar=1`**, e o reenquadramento vem antes da legenda no mesmo filtro. O `.ass` usa `PlayRes` 1080x1920.
 - **Pop:** palavras com mais de 16 letras são reduzidas proporcionalmente para caber na largura.
 - **Cache do render:** um corte é gerado de novo se o estilo **ou** o modo vertical mudar.
+
+## 2026-09-29: Fase 4
+
+- **SQLite (`data/clipforge.db`) para projetos e cortes.** O servidor e as tarefas de render escrevem ao mesmo tempo, e o SQLite evita as condições de corrida que um JSON teria. Uso uma conexão por operação, em modo WAL. A transcrição continua em JSON. A CLI usa o mesmo banco.
+- **Fila com um único trabalhador**, em memória. Transcrição e render já ocupam todo o processador, então rodar dois ao mesmo tempo não adiantaria. O cancelamento usa `threading.Event`: o FFmpeg é encerrado, e a transcrição para no próximo segmento.
+- **Rota de render `/api/projects/{pid}/clips/{cid}/render`**, e não `/api/clips/{id}/render`, porque o id do corte (`c01`, `m01`) só é único dentro do projeto. Também incluí `/render-all`, `/snap`, `/process`, `/captions/cues`, `/captions/export` e `/jobs/{id}/cancel`.
+- **Salvar cortes = PUT da lista inteira.** Mudar só o título mantém o vídeo já gerado. Mudar início ou fim marca o corte como "pending".
+- **A prévia da legenda é aproximada (CSS)**, mas usa os mesmos blocos de legenda do backend (`/captions/cues`, calculados por `group_words`), para não duplicar a lógica em JS.
+- **Nenhuma janela de diálogo (alert/confirm):** excluir tem "Desfazer", e substituir as sugestões da IA pede um segundo clique de confirmação.
+- **Resolução na exportação:** 1080x1920 ou 720x1280.
+- **Vídeo vertical:** o corte registra o modo realmente aplicado (`fit`), e não o pedido.
+- **Sem terminal:** `scripts/install-launcher.sh` cria um atalho no menu de aplicativos, que chama `scripts/start.sh` (abre o navegador e sobe o servidor se ele ainda não estiver rodando).
+- **Pasta de dados configurável** (`CLIPFORGE_DATA`), para os testes nunca tocarem em `data/`.

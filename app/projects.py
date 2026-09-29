@@ -10,9 +10,10 @@ import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
+from app import db
 from app.config import settings
-from app.errors import ClipForgeError
-from app.models import Clip
+from app.errors import ClipForgeError, NotFound
+from app.models import Clip, VideoInfo
 
 _CHUNK = 1024 * 1024
 
@@ -73,20 +74,28 @@ class Project:
         return self.dir / "exports"
 
     def load_clips(self) -> list[Clip]:
-        if not self.clips_path.exists():
-            return []
-        data = json.loads(self.clips_path.read_text(encoding="utf-8"))
-        return [Clip.model_validate(c) for c in data]
+        return db.load_clips(self.id)
 
     def save_clips(self, clips: list[Clip]) -> None:
-        tmp = self.clips_path.with_suffix(".tmp")
-        tmp.write_text(
-            json.dumps([c.model_dump() for c in clips], ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        tmp.replace(self.clips_path)
+        db.save_clips(self.id, clips)
+
+    def _import_legacy_clips(self) -> None:
+        """Projetos da Fase 1-3 guardavam os cortes em clips.json: importa uma vez para o banco."""
+        if not self.clips_path.exists():
+            return
+        if not db.load_clips(self.id):
+            data = json.loads(self.clips_path.read_text(encoding="utf-8"))
+            db.save_clips(self.id, [Clip.model_validate(c) for c in data])
+        self.clips_path.rename(self.clips_path.with_suffix(".json.importado"))
 
 
-def open_project(video: Path) -> Project:
+def get_project(pid: str) -> Project:
+    if not re.fullmatch(r"[a-z0-9-]+", pid) or db.get_project(pid) is None:
+        raise NotFound(f"Projeto '{pid}' não encontrado.")
+    return Project(pid, settings.projects_dir / pid)
+
+
+def open_project(video: Path, info: VideoInfo, name: str | None = None) -> Project:
     """Cria (ou reabre, se o mesmo vídeo já foi processado) o projeto de um vídeo."""
     video = video.resolve()
     pid = f"{slugify(video.stem)}-{fingerprint(video)}"
@@ -103,4 +112,27 @@ def open_project(video: Path) -> Project:
                 shutil.copy2(video, dest)
             except OSError as e:
                 raise ClipForgeError(f"Não foi possível copiar o vídeo para o projeto: {e}") from e
+    db.upsert_project(pid, name or video.name, info)
+    project._import_legacy_clips()
     return project
+
+
+def register_existing() -> int:
+    """Registra no banco projetos criados antes dele existir (pastas em data/projects/)."""
+    from app.pipeline.probe import probe  # import local: evita ciclo
+
+    n = 0
+    if not settings.projects_dir.exists():
+        return 0
+    for d in sorted(settings.projects_dir.iterdir()):
+        if not d.is_dir() or db.get_project(d.name) is not None:
+            continue
+        project = Project(d.name, d)
+        try:
+            source = project.source
+            db.upsert_project(d.name, source.name, probe(source))
+        except ClipForgeError:
+            continue
+        project._import_legacy_clips()
+        n += 1
+    return n

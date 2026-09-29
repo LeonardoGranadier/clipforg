@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from app.errors import ClipForgeError
+from app.errors import Cancelled, ClipForgeError
 
 ProgressFn = Callable[[float], None]
 
@@ -41,8 +42,12 @@ def run_ffmpeg(
     log_path: Path,
     duration: float | None = None,
     on_progress: ProgressFn | None = None,
+    cancel: threading.Event | None = None,
 ) -> None:
-    """Roda `ffmpeg <args>`. O stderr vai para `log_path`; o progresso (0..1) vem de `-progress`."""
+    """Roda `ffmpeg <args>`. O stderr vai para `log_path`; o progresso (0..1) vem de `-progress`.
+
+    Se `cancel` for acionado, o FFmpeg é encerrado e `Cancelled` é lançado.
+    """
     require("ffmpeg")
     log_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-progress", "pipe:1", *args]
@@ -55,6 +60,13 @@ def run_ffmpeg(
             raise ClipForgeError(f"Não foi possível iniciar o FFmpeg: {e}") from e
         assert proc.stdout is not None
         for line in proc.stdout:
+            if cancel is not None and cancel.is_set():
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                raise Cancelled()
             # out_time_us está em microssegundos (out_time_ms também, por um bug histórico)
             if on_progress and duration and line.startswith("out_time_us="):
                 try:

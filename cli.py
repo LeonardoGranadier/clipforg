@@ -140,7 +140,7 @@ def run(args: argparse.Namespace) -> int:
     if not info.has_audio:
         raise ClipForgeError("O vídeo não tem áudio; não há o que transcrever.")
 
-    project = open_project(args.video)
+    project = open_project(args.video, info)
     print(f"     Projeto: {project.dir}")
 
     print("2/4  Transcrevendo" + (" (usando cache)" if project.transcript_path.exists() else "..."))

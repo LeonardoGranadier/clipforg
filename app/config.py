@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
+# Pasta de dados; os testes apontam para uma pasta temporária.
+DATA = Path(os.getenv("CLIPFORGE_DATA") or ROOT / "data")
 
 
 def _int(name: str, default: int) -> int:
@@ -22,9 +24,9 @@ def _int(name: str, default: int) -> int:
 @dataclass(frozen=True)
 class Settings:
     root: Path = ROOT
-    data_dir: Path = ROOT / "data"
-    projects_dir: Path = ROOT / "data" / "projects"
-    logs_dir: Path = ROOT / "data" / "logs"
+    data_dir: Path = DATA
+    projects_dir: Path = DATA / "projects"
+    logs_dir: Path = DATA / "logs"
     fonts_dir: Path = ROOT / "fonts"
 
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "").strip()

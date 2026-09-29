@@ -1,6 +1,7 @@
 """Corte com FFmpeg, recodificando para ter precisão de quadro."""
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -33,6 +34,7 @@ def cut(
     vf: str | None = None,
     ass_path: Path | None = None,
     on_progress: Callable[[float], None] | None = None,
+    cancel: threading.Event | None = None,
 ) -> Path:
     """Corta [start, end].
 
@@ -46,7 +48,7 @@ def cut(
     filters = ",".join(f for f in (vf, ass_filter(ass_path) if ass_path else None) if f) or None
     try:
         run_ffmpeg(cut_args(src, tmp, start, end, filters), log_path=settings.logs_dir / f"{log_name}.log",
-                   duration=end - start, on_progress=on_progress)
+                   duration=end - start, on_progress=on_progress, cancel=cancel)
         tmp.replace(dst)
     finally:
         tmp.unlink(missing_ok=True)

@@ -1,3 +1,9 @@
+import os
+import tempfile
+
+# Antes de importar o app: dados dos testes numa pasta temporária, nunca em data/.
+os.environ["CLIPFORGE_DATA"] = tempfile.mkdtemp(prefix="clipforge-test-")
+
 import shutil
 import subprocess
 from pathlib import Path

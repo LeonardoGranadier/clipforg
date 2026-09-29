@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Callable
 from typing import Any
 
 from pydantic import ValidationError
 
 from app.config import settings
-from app.errors import ClipForgeError
+from app.errors import Cancelled, ClipForgeError
 from app.models import Clip, ClipSuggestion, ClipSuggestions, Segment, Transcript
 from app.pipeline.snap import snap_range
 
@@ -135,7 +136,7 @@ def make_client() -> Any:
     if not settings.anthropic_api_key:
         raise ClipForgeError(
             "ANTHROPIC_API_KEY não está definida no .env. Sem ela não há sugestões por IA, "
-            "mas você ainda pode criar cortes manualmente (--clip INICIO-FIM)."
+            "mas você ainda pode criar cortes manualmente."
         )
     import anthropic
     return anthropic.Anthropic(api_key=settings.anthropic_api_key)
@@ -147,6 +148,7 @@ def suggest_clips(
     *,
     client: Any | None = None,
     on_progress: Callable[[float], None] | None = None,
+    cancel: threading.Event | None = None,
 ) -> list[Clip]:
     import anthropic
 
@@ -154,6 +156,8 @@ def suggest_clips(
     blocks = split_blocks(transcript)
     raw: list[ClipSuggestion] = []
     for i, block in enumerate(blocks):
+        if cancel is not None and cancel.is_set():
+            raise Cancelled()
         try:
             raw.extend(_request_block(client, block, transcript.language))
         except anthropic.AuthenticationError as e:

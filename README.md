@@ -53,6 +53,23 @@ Os itens marcados como `FALTA` precisam ser corrigidos. Os marcados como `AVISO`
 python -m pytest -q
 ```
 
+## Uso (interface web)
+
+Depois de instalar, crie o atalho no menu de aplicativos (só uma vez):
+
+```bash
+bash scripts/install-launcher.sh
+```
+
+A partir daí, abra **ClipForge** pelo menu de aplicativos: o navegador abre em http://127.0.0.1:8000. Sem o atalho, rode `python -m app` com o ambiente ativado.
+
+1. **Projetos:** arraste um vídeo seu. A transcrição e as sugestões da IA começam sozinhas.
+2. **Cortes:** ajuste início e fim (campo numérico, botões −/+ de 0,1 s e "Encaixar nas palavras"). Crie cortes marcando início e fim no player ou selecionando um trecho da transcrição. Dá para duplicar, reordenar e excluir (com "Desfazer"). Tudo é salvo automaticamente.
+3. **Legendas:** escolha o estilo (a prévia aparece sobre o vídeo) e corrija palavras clicando nelas.
+4. **Exportar:** escolha formato, legenda e resolução e renderize um corte ou todos, com barra de progresso e opção de cancelar. Depois baixe o MP4, o SRT e o ASS. Também dá para gerar só as legendas do vídeo inteiro.
+
+O servidor continua rodando em segundo plano depois que você fecha o navegador. Para parar, reinicie o computador ou rode `pkill -f "python -m app"`.
+
 ## Uso (linha de comando)
 
 Com o ambiente ativado (`source .venv/bin/activate`):
