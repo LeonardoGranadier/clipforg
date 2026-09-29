@@ -204,6 +204,49 @@ def test_shutdown_refuses_with_active_jobs_then_forces(client, project_id, monke
     assert killed and not jobs.any_active()
 
 
+def test_queue_survives_restart(client, project_id):
+    """Simula o ClipForge fechado no meio de um render: ao abrir, a tarefa volta e termina."""
+    from app import db, tasks
+    from app.jobs import JobQueue
+
+    client.put(f"/api/projects/{project_id}/clips", json=[{"id": "m01", "start": 1, "end": 3, "title": "a"}])
+    jobs.wait_idle(60)
+    seq = db.insert_job("render", project_id, "m01", {"vertical": "fit", "resolution": "720p"}, 0.0)
+    db.update_job(seq, "running")                   # estava rodando quando o servidor caiu
+    db.update_clip(project_id, "m01", status="rendering")
+
+    fresh = JobQueue()                               # "novo processo"
+    fresh.factory = tasks.build
+    assert fresh.restore() >= 1
+    job = fresh.get(f"j{seq}")
+    assert job is not None and job.stage == "Retomado após reinício"
+    fresh.wait_idle(120)
+    assert job.status == "done", job.message
+    assert next(r for r in db.load_jobs() if r["seq"] == seq)["status"] == "done"
+    clip = client.get(f"/api/projects/{project_id}/clips").json()[0]
+    assert clip["status"] == "done" and clip["vertical_mode"] == "fit"
+
+
+def test_retranscribe_validation(client, project_id):
+    r = client.post(f"/api/projects/{project_id}/transcribe", json={"model": "gigante", "force": True})
+    assert r.status_code == 400 and "Modelo" in r.json()["detail"]
+    r = client.post(f"/api/projects/{project_id}/transcribe", json={"language": "xx", "force": True})
+    assert r.status_code == 400
+
+
+def test_failed_retranscribe_keeps_old_transcript_and_edits(client, project_id):
+    """O vídeo de teste só tem um tom (sem fala): a nova transcrição falha e nada do antigo se perde."""
+    project = get_project(project_id)
+    client.put(f"/api/projects/{project_id}/captions", json={"edits": {"0": "VOCÊ"}})
+    before = project.transcript_path.read_text(encoding="utf-8")
+    job = client.post(f"/api/projects/{project_id}/transcribe", json={"force": True}).json()
+    jobs.wait_idle(300)
+    job = client.get(f"/api/jobs/{job['id']}").json()
+    assert job["status"] == "error" and "fala" in job["message"]
+    assert project.transcript_path.read_text(encoding="utf-8") == before
+    assert project.captions_edits_path.exists()
+
+
 def test_delete_project_last(client, project_id, sample_video):
     # por último: apaga o projeto usado pelos outros testes
     source = get_project(project_id).source

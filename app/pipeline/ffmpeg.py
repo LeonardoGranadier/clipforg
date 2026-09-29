@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -10,6 +11,21 @@ from pathlib import Path
 from app.errors import Cancelled, ClipForgeError
 
 ProgressFn = Callable[[float], None]
+
+
+def _die_with_parent() -> None:  # pragma: no cover - roda no processo filho
+    """Linux: se o ClipForge morrer de repente, o sistema encerra o FFmpeg junto (sem órfãos)."""
+    try:
+        import ctypes
+        import signal
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGKILL)  # 1 = PR_SET_PDEATHSIG
+    except Exception:
+        pass
+
+
+def popen_kwargs() -> dict:
+    """Argumentos extras para subprocess.Popen de processos longos (FFmpeg)."""
+    return {"preexec_fn": _die_with_parent} if sys.platform.startswith("linux") else {}
 
 
 def require(binary: str) -> str:
@@ -55,7 +71,7 @@ def run_ffmpeg(
         log.write(" ".join(cmd) + "\n\n")
         log.flush()
         try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=log, text=True)
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=log, text=True, **popen_kwargs())
         except OSError as e:
             raise ClipForgeError(f"Não foi possível iniciar o FFmpeg: {e}") from e
         assert proc.stdout is not None

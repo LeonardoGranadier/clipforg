@@ -79,7 +79,29 @@
             <div class="toolbar">
               <button class="btn small" data-act="suggest">Sugerir cortes com IA</button>
               <button class="btn small hidden" data-act="transcribe">Transcrever</button>
+              <button class="btn small ghost hidden" data-act="toggle-retranscribe">Transcrever de novo…</button>
               <span class="muted" id="save-state"></span>
+            </div>
+            <div id="retranscribe" class="retranscribe hidden">
+              <p class="small muted" id="transcript-info"></p>
+              <div class="toolbar">
+                <label class="small">Modelo
+                  <select id="rt-model">
+                    <option value="base">base (rápido, erra mais)</option>
+                    <option value="small">small (equilibrado)</option>
+                    <option value="medium">medium (mais preciso, ~2 a 3x mais lento)</option>
+                    <option value="large-v3">large-v3 (o mais preciso; lento sem GPU)</option>
+                  </select></label>
+                <label class="small">Idioma
+                  <select id="rt-language">
+                    <option value="pt">Português</option>
+                    <option value="en">Inglês</option>
+                    <option value="auto">Detectar</option>
+                  </select></label>
+                <button class="btn small primary" data-act="retranscribe">Transcrever de novo</button>
+              </div>
+              <p class="small muted">Os cortes continuam. As correções de legenda feitas nesta transcrição deixam de valer
+                (ficam guardadas em <code>captions_edited.anterior.json</code>). Se a nova transcrição falhar ou for cancelada, a atual é mantida.</p>
             </div>
             <div id="clip-list" class="clip-list"></div>
             <h3>Transcrição <span class="muted small">(clique numa palavra para ir até ela; selecione um trecho para criar um corte)</span></h3>

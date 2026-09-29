@@ -276,6 +276,7 @@ function projectView(pid) {
     $("#vertical-note").textContent = vertical
       ? "Este vídeo já é vertical: ele não é recortado, só ajustado à tela (fit)." : "";
     $('[data-act="transcribe"]').classList.toggle("hidden", P.project.has_transcript);
+    $('[data-act="toggle-retranscribe"]').classList.toggle("hidden", !P.project.has_transcript);
     $('[data-act="suggest"]').disabled = !S.status?.api_key || !P.project.has_transcript;
     $('[data-act="suggest"]').title = S.status?.api_key ? "" : "Defina ANTHROPIC_API_KEY no .env para usar a IA";
   }
@@ -288,6 +289,13 @@ function projectView(pid) {
       return;
     }
     P.transcript = await api("GET", `/api/projects/${pid}/transcript`);
+    const t = P.transcript;
+    const langs = { pt: "português", en: "inglês" };
+    $("#transcript-info").textContent = `Transcrição atual: modelo ${t.model || "(não registrado)"}, ` +
+      `idioma ${langs[t.language] || t.language}, ${t.words.length} palavras.`;
+    const better = { base: "small", small: "medium", medium: "large-v3" };
+    $("#rt-model").value = better[t.model || S.status?.whisper_model] || "medium";
+    $("#rt-language").value = ["pt", "en"].includes(t.language) ? t.language : "auto";
     P.savedEdits = { ...P.transcript.edits };
     P.edits = { ...P.transcript.edits };
     P.starts = P.transcript.words.map((w) => w.start);
@@ -322,6 +330,11 @@ function projectView(pid) {
           if (j.status === "error") showNotice(j.message, true);
           else if (j.message) showNotice(j.message);
           else if (j.status === "done" && j.result?.suggested !== undefined) toast(`${j.result.suggested} corte(s) sugerido(s) pela IA.`, "ok");
+          else if (j.status === "done" && j.kind === "transcribe" && j.result?.model) {
+            toast(`Transcrição refeita com o modelo ${j.result.model}.` +
+              (j.result.edits_reset ? " As correções de legenda antigas foram guardadas como backup." : "") +
+              " Se quiser, peça novas sugestões à IA.", "ok");
+          }
         }
       }
       P.jobs[j.id] = j;
@@ -1005,6 +1018,21 @@ function projectView(pid) {
       } catch (e) { fail(e); }
     },
     "save-captions": saveCaptions,
+    "toggle-retranscribe": () => $("#retranscribe").classList.toggle("hidden"),
+    retranscribe: (btn) => {
+      const renders = activeJobs().filter((j) => j.kind === "render").length;
+      if (renders) { toast("Espere os renders deste projeto terminarem (ou cancele) antes de transcrever de novo.", "error"); return; }
+      const model = $("#rt-model").value;
+      confirmClick(btn, `Confirmar: transcrever com ${model}?`, async () => {
+        try {
+          const j = await api("POST", `/api/projects/${pid}/transcribe`,
+            { model, language: $("#rt-language").value, force: true });
+          P.jobs[j.id] = j;
+          renderBanner();
+          $("#retranscribe").classList.add("hidden");
+        } catch (e) { fail(e); }
+      });
+    },
     "delete-renders": (btn) => confirmClick(btn, "Apagar mesmo?", async () => {
       try {
         const r = await api("DELETE", `/api/projects/${pid}/renders`);

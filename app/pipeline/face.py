@@ -22,6 +22,7 @@ from pathlib import Path
 from app.config import settings
 from app.errors import Cancelled, ClipForgeError
 from app.models import VideoInfo, Word
+from app.pipeline.ffmpeg import popen_kwargs
 
 MODEL = settings.root / "models" / "face_detection_yunet_2023mar.onnx"
 
@@ -125,7 +126,7 @@ def analyze(
     samples: list[dict[int, Face]] = []
     tracks: dict[int, dict] = {}   # id -> {cx, w, last (índice da amostra), patch}
     next_id = 0
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **popen_kwargs())
     try:
         assert proc.stdout is not None
         while True:

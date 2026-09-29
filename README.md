@@ -77,6 +77,7 @@ Abra **ClipForge** pelo menu de aplicativos, ou rode `python -m app` com o ambie
    - Crie cortes com **Marcar início / Marcar fim** no player ou selecionando um trecho da transcrição.
    - Clique numa palavra da transcrição para ir até ela no vídeo.
    - Dá para duplicar, reordenar e excluir (com **Desfazer**). Tudo é salvo automaticamente.
+   - **Transcrever de novo…** refaz a transcrição com outro modelo (ex.: `medium`, mais preciso) ou idioma. Os cortes continuam. As correções de legenda antigas ficam guardadas em `captions_edited.anterior.json`. Se a nova transcrição falhar, a atual é mantida.
 3. **Legendas:**
    - Escolha o estilo (a prévia aparece sobre o vídeo durante o play).
    - Para corrigir uma palavra, clique nela e digite. Enter salva, Esc cancela, e texto vazio remove a palavra.
@@ -88,7 +89,7 @@ Abra **ClipForge** pelo menu de aplicativos, ou rode `python -m app` com o ambie
    - **Só legendas** gera `.srt` e `.ass` do vídeo inteiro, sem cortar.
 
 **No topo da tela:**
-- **Fila:** mostra tudo o que está rodando em todos os projetos, com progresso e botão de cancelar.
+- **Fila:** mostra tudo o que está rodando em todos os projetos, com progresso e botão de cancelar. A fila é salva: se o ClipForge ou o computador desligar no meio, ao abrir de novo as tarefas pendentes continuam sozinhas (um render interrompido recomeça do zero).
 - **Encerrar:** fecha o ClipForge. O servidor continua rodando em segundo plano até você clicar em Encerrar.
 
 **Espaço em disco:** na aba Exportar, **Apagar vídeos gerados** libera espaço mantendo os cortes. Na lista de projetos, **Excluir** apaga o projeto inteiro. Em nenhum dos dois casos o vídeo original no seu computador é apagado.
@@ -111,6 +112,7 @@ python cli.py caminho/do/video.mp4 --vertical blur --captions --style karaoke
 | `--no-render` | Só transcreve e sugere, sem gerar os vídeos. |
 | `--lang en` | Idioma do vídeo (`pt`, `en` ou `auto`). |
 | `--whisper-model medium` | Troca o modelo de transcrição. |
+| `--retranscribe` | Refaz a transcrição (use junto com `--whisper-model`). |
 | `--vertical blur` | Saída 9:16: `fit`, `center`, `blur` ou `face` (segue o rosto de quem fala). |
 | `--speed qualidade` | Velocidade do render: `rapido` (padrão) ou `qualidade`. |
 | `--captions` | Grava a legenda nos cortes e salva `.ass` e `.srt` ao lado de cada `.mp4`. |
@@ -155,7 +157,7 @@ data/
 | "ffmpeg não foi encontrado" | Instale o FFmpeg (passo 1) e rode `python -m app.doctor`. |
 | "ANTHROPIC_API_KEY não está definida" | Cole a chave no `.env` e reinicie o ClipForge (Encerrar e abrir de novo). Os cortes manuais funcionam sem ela. |
 | "Chave da API inválida" | Confira se a chave foi copiada inteira, começando com `sk-ant-`. |
-| Transcrição com palavras erradas | Corrija na aba Legendas, ou use `WHISPER_MODEL=medium` no `.env` e transcreva de novo (apague `transcript.json` do projeto). |
+| Transcrição com palavras erradas | Corrija na aba Legendas, ou use **Transcrever de novo…** (aba Cortes) com o modelo `medium`. |
 | "O vídeo não tem áudio" | O ClipForge precisa da fala para transcrever. |
 | "Disco cheio" | Use **Apagar vídeos gerados** ou exclua projetos antigos. |
 | Render lento | No modo Rápido, um corte leva mais ou menos a própria duração para renderizar no processador. A resolução 720x1280 é ainda mais rápida. |

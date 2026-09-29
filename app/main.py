@@ -34,7 +34,7 @@ from app.pipeline.cut import SPEEDS
 from app.pipeline.reframe import MODES, RESOLUTIONS
 from app.pipeline.render import caption_words, export_full_captions
 from app.pipeline.snap import snap_range
-from app.pipeline.transcribe import load_transcript
+from app.pipeline.transcribe import WHISPER_MODELS, load_transcript
 from app.projects import (Project, cleanup_leftovers, delete_project, delete_renders, dir_size, get_project,
                           open_project, register_existing)
 
@@ -61,6 +61,10 @@ async def lifespan(_: FastAPI):
     cleanup_leftovers()
     db.reset_interrupted_renders()
     register_existing()
+    jobs.factory = tasks.build
+    resumed = jobs.restore()
+    if resumed:
+        log.info("Fila retomada: %d tarefa(s)", resumed)
     app.state.problems = doctor.critical_problems()
     for p in app.state.problems:
         log.error("Problema no ambiente: %s", p)
@@ -166,6 +170,8 @@ def status() -> dict:
         "vertical_modes": list(MODES),
         "resolutions": list(RESOLUTIONS),
         "render_speed": settings.render_speed,
+        "whisper_models": list(WHISPER_MODELS),
+        "language": settings.language,
         "clip_min_seconds": settings.clip_min_seconds,
         "clip_max_seconds": settings.clip_max_seconds,
         "fonts": list(captions.FONTS),
@@ -250,6 +256,7 @@ def remove_project(pid: str) -> dict:
     if jobs.any_active(pid):
         raise ClipForgeError("Uma tarefa deste projeto ainda está terminando. Tente de novo em alguns segundos.")
     delete_project(pid)
+    jobs.forget_project(pid)
     return {"deleted": pid}
 
 
@@ -267,14 +274,25 @@ def process(pid: str) -> dict:
     """Transcreve e sugere cortes (o que a tela de processamento dispara após o upload)."""
     project = get_project(pid)
     running = jobs.active(pid, "process") or jobs.active(pid, "transcribe")
-    job = running or jobs.submit("process", pid, tasks.process_task(project))
+    job = running or jobs.submit("process", pid)
     return job.public()
 
 
+class TranscribeOptions(BaseModel):
+    model: str | None = None      # modelo Whisper; padrão: WHISPER_MODEL do .env
+    language: str | None = None   # pt, en, auto; padrão: LANGUAGE do .env
+    force: bool = False           # refazer mesmo se já existir transcrição
+
+
 @app.post("/api/projects/{pid}/transcribe")
-def transcribe(pid: str) -> dict:
-    project = get_project(pid)
-    job = jobs.active(pid, "transcribe") or jobs.submit("transcribe", pid, tasks.transcribe_task(project))
+def transcribe(pid: str, opts: TranscribeOptions | None = None) -> dict:
+    get_project(pid)
+    opts = opts or TranscribeOptions()
+    params = opts.model_dump()
+    tasks.transcribe_task(get_project(pid), opts.model, opts.language, opts.force)  # valida já, antes de enfileirar
+    if jobs.active(pid, "render"):
+        raise ClipForgeError("Há renders em andamento neste projeto. Espere terminar ou cancele antes de transcrever de novo.")
+    job = jobs.active(pid, "transcribe") or jobs.active(pid, "process") or jobs.submit("transcribe", pid, params)
     return job.public()
 
 
@@ -283,7 +301,9 @@ def suggest(pid: str) -> dict:
     project = get_project(pid)
     if not settings.anthropic_api_key:
         raise ClipForgeError("ANTHROPIC_API_KEY não está definida no .env.")
-    job = jobs.active(pid, "suggest") or jobs.submit("suggest", pid, tasks.suggest_task(project))
+    if not project.transcript_path.exists():
+        raise ClipForgeError("Transcreva o vídeo antes de pedir sugestões.")
+    job = jobs.active(pid, "suggest") or jobs.submit("suggest", pid)
     return job.public()
 
 
@@ -302,7 +322,7 @@ def transcript(pid: str) -> dict:
             words.append({"i": i, "word": w.word, "start": w.start, "end": w.end, "prob": w.prob})
             i += 1
         segments.append({"start": s.start, "end": s.end, "first": first, "last": i - 1})
-    return {"language": t.language, "duration": t.duration, "words": words, "segments": segments,
+    return {"language": t.language, "duration": t.duration, "model": t.model, "words": words, "segments": segments,
             "edits": captions.load_edits(project.captions_edits_path)}
 
 
@@ -443,8 +463,8 @@ def _submit_render(project: Project, cid: str, opts: RenderOptions) -> dict:
     running = jobs.active(project.id, "render", cid)
     if running:
         return running.public()
-    return jobs.submit("render", project.id, tasks.render_task(project, cid, opts.style, opts.vertical,
-                                                              opts.resolution, opts.speed), clip_id=cid).public()
+    params = {"style": opts.style, "vertical": opts.vertical, "resolution": opts.resolution, "speed": opts.speed}
+    return jobs.submit("render", project.id, params, clip_id=cid).public()
 
 
 @app.post("/api/projects/{pid}/clips/{cid}/render")

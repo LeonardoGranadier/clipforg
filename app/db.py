@@ -37,6 +37,17 @@ CREATE TABLE IF NOT EXISTS clips (
     output_path   TEXT,
     PRIMARY KEY (project_id, id)
 );
+CREATE TABLE IF NOT EXISTS jobs (
+    seq         INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind        TEXT NOT NULL,
+    project_id  TEXT NOT NULL,
+    clip_id     TEXT,
+    params      TEXT NOT NULL DEFAULT '{}',
+    status      TEXT NOT NULL,
+    message     TEXT NOT NULL DEFAULT '',
+    result      TEXT NOT NULL DEFAULT '{}',
+    created_at  REAL NOT NULL
+);
 """
 
 CLIP_FIELDS = ("id", "project_id", "start", "end", "title", "hook", "reason", "score",
@@ -137,5 +148,39 @@ def reset_interrupted_renders() -> None:
 
 def delete_project(pid: str) -> None:
     with connect() as c:
+        c.execute("DELETE FROM jobs WHERE project_id = ?", (pid,))
         c.execute("DELETE FROM clips WHERE project_id = ?", (pid,))
         c.execute("DELETE FROM projects WHERE id = ?", (pid,))
+
+
+# --- fila de tarefas (sobrevive a reinícios) -----------------------------------
+
+def insert_job(kind: str, project_id: str, clip_id: str | None, params: dict, created_at: float) -> int:
+    with connect() as c:
+        cur = c.execute(
+            "INSERT INTO jobs (kind, project_id, clip_id, params, status, created_at) VALUES (?, ?, ?, ?, 'queued', ?)",
+            (kind, project_id, clip_id, json.dumps(params), created_at),
+        )
+        return int(cur.lastrowid)
+
+
+def update_job(seq: int, status: str, message: str = "", result: dict | None = None) -> None:
+    with connect() as c:
+        c.execute("UPDATE jobs SET status = ?, message = ?, result = ? WHERE seq = ?",
+                  (status, message, json.dumps(result or {}), seq))
+
+
+def load_jobs(limit: int = 200) -> list[dict]:
+    """Tarefas não terminadas (todas) + as últimas terminadas, da mais antiga para a mais nova."""
+    with connect() as c:
+        rows = c.execute(
+            "SELECT * FROM jobs WHERE status IN ('queued', 'running') "
+            "OR seq IN (SELECT seq FROM jobs WHERE status NOT IN ('queued', 'running') ORDER BY seq DESC LIMIT ?) "
+            "ORDER BY seq", (limit,)).fetchall()
+    return [{**dict(r), "params": json.loads(r["params"]), "result": json.loads(r["result"])} for r in rows]
+
+
+def prune_jobs(keep: int = 200) -> None:
+    with connect() as c:
+        c.execute("DELETE FROM jobs WHERE status NOT IN ('queued', 'running') AND seq NOT IN "
+                  "(SELECT seq FROM jobs WHERE status NOT IN ('queued', 'running') ORDER BY seq DESC LIMIT ?)", (keep,))

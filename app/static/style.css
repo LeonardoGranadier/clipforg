@@ -218,6 +218,9 @@ select {
 .toast.ok { border-left-color: var(--ok); }
 
 /* ---- Fase 6 ---- */
+.retranscribe { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; }
+.retranscribe label { display: flex; flex-direction: column; gap: 3px; }
+.retranscribe code { font-size: 11px; }
 .queue-panel {
   position: fixed; right: 16px; top: 48px; width: 380px; max-height: 60vh; overflow: auto; z-index: 40;
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);

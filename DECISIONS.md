@@ -101,3 +101,15 @@
   - a pessoa inicial é a que mais fala no primeiro 1,5 s (e não o maior rosto).
 - **Análise a 8 amostras/s** (antes 4), porque a boca muda rápido. As constantes de suavização passaram a ser definidas em segundos, para não depender da taxa.
 - **Na troca de pessoa, o recorte faz corte seco** (sem interpolar), como numa edição, em vez de deslizar pela tela.
+- **Transcrever de novo:**
+  - novo parâmetro `force` em `transcribe()`; a nova transcrição é gravada em `.tmp` e só troca a atual (troca atômica) se der certo;
+  - as correções de legenda apontam para o índice das palavras, que muda, então são movidas para `captions_edited.anterior.json` em vez de aplicadas na transcrição errada;
+  - os cortes são mantidos, porque os tempos continuam válidos;
+  - o modelo usado passa a ser gravado no `transcript.json` (`model`);
+  - a transcrição é recusada enquanto houver renders do projeto na fila.
+- **Fila persistente (tabela `jobs` no SQLite):**
+  - cada tarefa guarda tipo + parâmetros; a função é montada na hora por `tasks.build(job)`, o que permite recriá-la depois de reiniciar;
+  - ao iniciar, `queued`/`running` voltam para a fila (quem rodava recomeça do zero, com etapa "Retomado após reinício");
+  - progresso e etapa ficam só na memória, porque gravar no banco a cada atualização seria desperdício;
+  - o histórico guarda as últimas 200 tarefas; os ids passaram a ser `j<seq do banco>`, para não se repetirem entre reinícios.
+- **FFmpeg nunca fica órfão (Linux):** `preexec_fn` com `prctl(PR_SET_PDEATHSIG, SIGKILL)`. Descoberto no teste com `kill -9`: sem isso, o FFmpeg antigo continuava gravando o mesmo `.part.mp4` que a tarefa retomada usaria. No Windows/macOS não há equivalente simples; lá vale a limpeza de sobras ao iniciar.

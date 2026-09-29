@@ -25,6 +25,7 @@ class Transcript(BaseModel):
     language: str
     duration: float
     segments: list[Segment]
+    model: str | None = None   # modelo Whisper usado (transcrições antigas não têm)
 
     def all_words(self) -> list[Word]:
         return [w for s in self.segments for w in s.words]

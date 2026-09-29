@@ -111,6 +111,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--clip", action="append", type=parse_range, default=[], metavar="INICIO-FIM",
                    help="corte manual; pode repetir. Ex.: --clip 1:05-1:48")
     p.add_argument("--no-ai", action="store_true", help="não pedir sugestões ao Claude")
+    p.add_argument("--retranscribe", action="store_true",
+                   help="refazer a transcrição (use com --whisper-model medium para mais precisão)")
     p.add_argument("--resuggest", action="store_true", help="descartar sugestões anteriores e pedir de novo")
     p.add_argument("--no-render", action="store_true", help="só transcrever e sugerir, sem gerar os vídeos")
     p.add_argument("--captions", action="store_true", help="gravar a legenda nos cortes (e salvar .ass/.srt)")
@@ -146,9 +148,13 @@ def run(args: argparse.Namespace) -> int:
     project = open_project(args.video, info)
     print(f"     Projeto: {project.dir}")
 
-    print("2/4  Transcrevendo" + (" (usando cache)" if project.transcript_path.exists() else "..."))
+    cached = project.transcript_path.exists() and not args.retranscribe
+    print("2/4  Transcrevendo" + (" (usando cache)" if cached else "..."))
     transcript = transcribe(project.source, project.transcript_path, language=args.lang,
-                            model_name=args.whisper_model, on_progress=Bar("transcrição"))
+                            model_name=args.whisper_model, force=args.retranscribe, on_progress=Bar("transcrição"))
+    if args.retranscribe and project.captions_edits_path.exists():
+        project.captions_edits_path.replace(project.captions_edits_path.with_suffix(".anterior.json"))
+        print("     Correções de legenda antigas guardadas em captions_edited.anterior.json (as posições mudaram).")
     n_words = len(transcript.all_words())
     print(f"     {len(transcript.segments)} frases, {n_words} palavras, idioma: {transcript.language}")
 

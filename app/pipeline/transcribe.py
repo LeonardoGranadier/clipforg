@@ -16,6 +16,8 @@ from app.pipeline.ffmpeg import run_ffmpeg
 log = logging.getLogger(__name__)
 
 MIN_WORD = 0.05  # duração mínima de uma palavra, em segundos
+WHISPER_MODELS = ("base", "small", "medium", "large-v3")
+LANGUAGES = ("pt", "en", "auto")
 
 
 def fix_word_times(words: list[Word], seg_start: float, seg_end: float) -> list[Word]:
@@ -66,9 +68,13 @@ def transcribe(
     model_name: str | None = None,
     on_progress: Callable[[float], None] | None = None,
     cancel: threading.Event | None = None,
+    force: bool = False,
 ) -> Transcript:
-    """Transcreve o vídeo e salva em `out_path`. Se o arquivo já existe, só carrega (cache)."""
-    if out_path.exists():
+    """Transcreve o vídeo e salva em `out_path`. Se o arquivo já existe, só carrega (cache).
+
+    Com `force`, transcreve de novo; o arquivo antigo só é substituído se a nova transcrição der certo.
+    """
+    if out_path.exists() and not force:
         return load_transcript(out_path)
 
     lang = language or settings.language
@@ -119,8 +125,10 @@ def transcribe(
     if not segments:
         raise ClipForgeError("Nenhuma fala foi encontrada no áudio do vídeo.")
 
-    transcript = Transcript(language=info.language, duration=info.duration, segments=segments)
-    out_path.write_text(json.dumps(transcript.model_dump(), ensure_ascii=False, indent=1), encoding="utf-8")
+    transcript = Transcript(language=info.language, duration=info.duration, segments=segments, model=model_name)
+    tmp = out_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(transcript.model_dump(), ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(out_path)  # troca atômica: nunca fica meio arquivo
     if on_progress:
         on_progress(1.0)
     return transcript
